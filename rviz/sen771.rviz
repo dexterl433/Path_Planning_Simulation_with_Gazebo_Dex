@@ -1,0 +1,174 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Occupancy Grid1
+        - /A* Path1
+        - /BFS Path1
+        - /RRT Path1
+        - /Robot Pose1
+      Splitter Ratio: 0.5
+    Tree Height: 600
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Occupancy Grid
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Name: /sen771/occupancy_grid
+        Reliability Policy: Reliable
+        Value: /sen771/occupancy_grid
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /sen771/occupancy_grid_updates
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Buffer Length: 1
+      Color: 220; 30; 30
+      Enabled: true
+      Head Arrow Scale: 0.3
+      Head Diameter: 0.5
+      Head Length: 0.3
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 1.5
+      Name: "A* Path"
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.5
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.1
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Name: /sen771/astar_path
+        Reliability Policy: Reliable
+        Value: /sen771/astar_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Buffer Length: 1
+      Color: 30; 200; 30
+      Enabled: true
+      Line Style: Lines
+      Line Width: 1.5
+      Name: BFS Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 1.0
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Name: /sen771/bfs_path
+        Reliability Policy: Reliable
+        Value: /sen771/bfs_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Buffer Length: 1
+      Color: 255; 140; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 1.5
+      Name: RRT Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 1.5
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Name: /sen771/rrt_path
+        Reliability Policy: Reliable
+        Value: /sen771/rrt_path
+      Value: true
+    - Axes Length: 4
+      Axes Radius: 0.8
+      Class: rviz_default_plugins/Pose
+      Color: 255; 0; 220
+      Enabled: true
+      Head Diameter: 3
+      Head Length: 2
+      Name: Robot Pose
+      Shape: Arrow
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Name: /sen771/robot_pose
+        Reliability Policy: Reliable
+        Value: /sen771/robot_pose
+      Value: true
+  Enabled: true
+  Fixed Frame: map
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive: false
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Scale: 5.5
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 60
+      Y: 45
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Selection:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1200
+  X: 50
+  Y: 50

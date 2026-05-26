@@ -1,0 +1,451 @@
+<?xml version="1.0" ?>
+<!--
+  SEN771 - AGVC Path Planning Simulation World
+  Student: Dexter Leong | s223026243
+  120m x 90m soccer field, 15 obstacles, 4 targets, diff-drive robot
+-->
+<sdf version="1.6">
+  <world name="sen771_world">
+
+    <!-- ── Scene: disable world-origin grid ── -->
+    <scene>
+      <grid>false</grid>
+      <origin_visual>false</origin_visual>
+      <shadows>false</shadows>
+    </scene>
+
+    <!-- ── GUI: OGRE2 renderer + aerial camera over the field ── -->
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.2 0.5 0.8 1</background_color>
+        <!-- Aerial view centred on the 120x90 field -->
+        <camera_pose>60 -30 120 0 1.0 1.57</camera_pose>
+        <camera_clip>
+          <near>0.25</near>
+          <far>5000</far>
+        </camera_clip>
+        <grid>false</grid>
+      </plugin>
+      <plugin filename="GzSceneManager"   name="Scene Manager"/>
+      <plugin filename="InteractiveViewControl" name="Interactive view control"/>
+      <plugin filename="CameraTracking"   name="Camera Tracking"/>
+      <plugin filename="WorldControl"     name="World control">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool"   key="showTitleBar">false</property>
+          <property type="bool"   key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View"><line own="left" target="left"/><line own="bottom" target="bottom"/></anchors>
+        </gz-gui>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool"   key="showTitleBar">false</property>
+          <property type="bool"   key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View"><line own="right" target="right"/><line own="bottom" target="bottom"/></anchors>
+        </gz-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>true</iterations>
+      </plugin>
+    </gui>
+
+    <!-- ── Physics ── -->
+    <!-- Physics: keep 1ms step for accurate contact; cap RTF at 2 so the
+         sim can speed up modestly without teleporting. -->
+    <physics name="0.5ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>8.0</real_time_factor>
+    </physics>
+
+    <!-- ── Required plugins ── -->
+    <plugin filename="gz-sim-physics-system"           name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"     name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-contact-system"           name="gz::sim::systems::Contact"/>
+
+    <!-- ── Sun ── -->
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 100 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.4 0.2 -0.9</direction>
+    </light>
+
+    <!-- ── Large ground base (extends well beyond field edges, no grid) ── -->
+    <model name="ground_base">
+      <static>true</static>
+      <pose>60 45 -0.01 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>300 300 0.02</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>300 300 0.02</size></box></geometry>
+          <material><ambient>0.25 0.22 0.2 1</ambient><diffuse>0.25 0.22 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════
+         SOCCER FIELD  (120m x 90m, green surface)
+    ═══════════════════════════════════════════════ -->
+    <model name="soccer_field">
+      <static>true</static>
+      <pose>60 45 0 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>120 90 0.05</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>120 90 0.05</size></box></geometry>
+          <material>
+            <ambient>0.18 0.55 0.20 1</ambient>
+            <diffuse>0.22 0.62 0.24 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── Field boundary lines (white, 0.5m wide) ── -->
+    <model name="line_bottom">
+      <static>true</static><pose>60 0 0.03 0 0 0</pose>
+      <link name="l"><visual name="v"><geometry><box><size>121 0.4 0.02</size></box></geometry>
+        <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link>
+    </model>
+    <model name="line_top">
+      <static>true</static><pose>60 90 0.03 0 0 0</pose>
+      <link name="l"><visual name="v"><geometry><box><size>121 0.4 0.02</size></box></geometry>
+        <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link>
+    </model>
+    <model name="line_left">
+      <static>true</static><pose>0 45 0.03 0 0 0</pose>
+      <link name="l"><visual name="v"><geometry><box><size>0.4 91 0.02</size></box></geometry>
+        <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link>
+    </model>
+    <model name="line_right">
+      <static>true</static><pose>120 45 0.03 0 0 0</pose>
+      <link name="l"><visual name="v"><geometry><box><size>0.4 91 0.02</size></box></geometry>
+        <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link>
+    </model>
+    <model name="line_center">
+      <static>true</static><pose>60 45 0.03 0 0 0</pose>
+      <link name="l"><visual name="v"><geometry><box><size>0.4 90 0.02</size></box></geometry>
+        <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link>
+    </model>
+
+    <!-- ── Centre circle (24-segment approximation, radius 9.15 m) ── -->
+    <model name="cc_00"><static>true</static><pose>69.072 46.194 0.03 0 0 1.7017</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_01"><static>true</static><pose>68.453 48.502 0.03 0 0 1.9635</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_02"><static>true</static><pose>67.259 50.570 0.03 0 0 2.2253</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_03"><static>true</static><pose>65.570 52.259 0.03 0 0 2.4871</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_04"><static>true</static><pose>63.502 53.453 0.03 0 0 2.7489</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_05"><static>true</static><pose>61.194 54.072 0.03 0 0 3.0107</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_06"><static>true</static><pose>58.806 54.072 0.03 0 0 3.2725</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_07"><static>true</static><pose>56.498 53.453 0.03 0 0 3.5343</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_08"><static>true</static><pose>54.430 52.259 0.03 0 0 3.7961</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_09"><static>true</static><pose>52.741 50.570 0.03 0 0 4.0579</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_10"><static>true</static><pose>51.547 48.502 0.03 0 0 4.3197</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_11"><static>true</static><pose>50.928 46.194 0.03 0 0 4.5815</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_12"><static>true</static><pose>50.928 43.806 0.03 0 0 4.8433</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_13"><static>true</static><pose>51.547 41.498 0.03 0 0 5.1051</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_14"><static>true</static><pose>52.741 39.430 0.03 0 0 5.3669</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_15"><static>true</static><pose>54.430 37.741 0.03 0 0 5.6287</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_16"><static>true</static><pose>56.498 36.547 0.03 0 0 5.8905</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_17"><static>true</static><pose>58.806 35.928 0.03 0 0 6.1523</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_18"><static>true</static><pose>61.194 35.928 0.03 0 0 6.4141</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_19"><static>true</static><pose>63.502 36.547 0.03 0 0 6.6759</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_20"><static>true</static><pose>65.570 37.741 0.03 0 0 6.9377</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_21"><static>true</static><pose>67.259 39.430 0.03 0 0 7.1995</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_22"><static>true</static><pose>68.453 41.498 0.03 0 0 7.4613</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="cc_23"><static>true</static><pose>69.072 43.806 0.03 0 0 7.7231</pose><link name="l"><visual name="v"><geometry><box><size>2.789 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+
+    <!-- ── Centre spot ── -->
+    <model name="centre_spot"><static>true</static><pose>60 45 0.031 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>0.8 0.8 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+
+    <!-- ── Penalty + 6-yard box outlines (FIFA dimensions) ── -->
+    <model name="pen_L_top"><static>true</static><pose>8.25 65.16 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>16.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="pen_L_bot"><static>true</static><pose>8.25 24.84 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>16.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="pen_L_inner"><static>true</static><pose>16.5 45.0 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>0.4 40.32 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="six_L_top"><static>true</static><pose>2.75 54.16 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>5.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="six_L_bot"><static>true</static><pose>2.75 35.84 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>5.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="six_L_inner"><static>true</static><pose>5.5 45.0 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>0.4 18.32 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="pen_R_top"><static>true</static><pose>111.75 65.16 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>16.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="pen_R_bot"><static>true</static><pose>111.75 24.84 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>16.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="pen_R_inner"><static>true</static><pose>103.5 45.0 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>0.4 40.32 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="six_R_top"><static>true</static><pose>117.25 54.16 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>5.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="six_R_bot"><static>true</static><pose>117.25 35.84 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>5.5 0.4 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+    <model name="six_R_inner"><static>true</static><pose>114.5 45.0 0.03 0 0 0</pose><link name="l"><visual name="v"><geometry><box><size>0.4 18.32 0.02</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual></link></model>
+
+    {OBSTACLES}
+
+    <!-- ═══════════════════════════════════════════════
+         4 TARGET MARKERS  (tall cylinders, distinct colours)
+         Positions from MATLAB sample: T1-T4
+    ═══════════════════════════════════════════════ -->
+
+    <!-- T1: right side – Blue (flat disc on ground)
+         Moved inward from spec X=119.5 to X=116.0 so the 2 m disc + the
+         3 m-long robot can fit inside the field without crashing the wall. -->
+    <model name="target_1"><static>true</static><pose>116.0 54.5 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
+          <material><ambient>0.0 0.3 1.0 1</ambient><diffuse>0.0 0.3 1.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- T2: lower right – Orange (flat disc on ground) -->
+    <model name="target_2"><static>true</static><pose>82.5 15.5 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
+          <material><ambient>1.0 0.4 0.0 1</ambient><diffuse>1.0 0.4 0.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- T3: upper right – Purple (flat disc on ground) -->
+    <model name="target_3"><static>true</static><pose>82.5 75.5 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
+          <material><ambient>0.7 0.0 0.9 1</ambient><diffuse>0.7 0.0 0.9 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- T4: centre area – Yellow (flat disc on ground) -->
+    <model name="target_4"><static>true</static><pose>60.5 54.5 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
+          <material><ambient>1.0 0.9 0.0 1</ambient><diffuse>1.0 0.9 0.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════
+         ROBOT  (Clearpath Husky A200, diff-drive on rear wheels)
+         Start: left edge, mid-height  x=3 y=45
+         Model origin at wheel-axle height (z=0.4)
+         Front of robot faces +X direction
+    ═══════════════════════════════════════════════ -->
+    <model name="sen771_robot">
+      <pose>3 45 0.4 0 0 0</pose>
+
+      <!-- ── Chassis: Clearpath Husky A200 body mesh (scaled 3x) ── -->
+      <link name="chassis">
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <mass>8.0</mass>
+          <inertia><ixx>1.5</ixx><ixy>0</ixy><ixz>0</ixz>
+                   <iyy>4.0</iyy><iyz>0</iyz><izz>4.5</izz></inertia>
+        </inertial>
+        <!-- Husky A200 base mesh (real size 0.99x0.57m, scaled 3x → ~3x1.7m) -->
+        <visual name="body">
+          <pose>0 0 -0.25 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///opt/ros/jazzy/share/clearpath_platform_description/meshes/a200/base_link.dae</uri>
+              <scale>3 3 3</scale>
+            </mesh>
+          </geometry>
+        </visual>
+        <!-- Husky A200 top chassis mesh -->
+        <visual name="top">
+          <pose>0 0 -0.25 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///opt/ros/jazzy/share/clearpath_platform_description/meshes/a200/top_chassis.dae</uri>
+              <scale>3 3 3</scale>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name="col">
+          <pose>0 0 0.15 0 0 0</pose>
+          <geometry><box><size>3.0 1.7 0.75</size></box></geometry>
+        </collision>
+      </link>
+
+      <!-- ── Rear left wheel (driven) ── -->
+      <!-- Cylinder collision (radius 0.4, length 0.4), axis rotated 90°
+           around X so cylinder Z aligns with link Y (wheel rotation axis).
+           mu2=0.1 = low lateral friction so the chassis can pivot when one
+           side slips during a diff-drive turn. -->
+      <link name="left_wheel">
+        <pose>-1.1 1.05 0 0 0 0</pose>
+        <inertial><mass>2</mass>
+          <inertia><ixx>0.145833</ixx><ixy>0</ixy><ixz>0</ixz>
+                   <iyy>0.145833</iyy><iyz>0</iyz><izz>0.125</izz></inertia>
+        </inertial>
+        <visual name="tyre">
+          <geometry>
+            <mesh>
+              <uri>file:///opt/ros/jazzy/share/clearpath_platform_description/meshes/a200/wheels/outdoor.dae</uri>
+              <scale>3.6 3.6 3.6</scale>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name="c">
+          <pose>0 0 0 1.5708 0 0</pose>
+          <geometry><cylinder><radius>0.4</radius><length>0.4</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>1.5</mu><mu2>1.5</mu2>
+            <fdir1>1 0 0</fdir1>
+          </ode></friction></surface>
+        </collision>
+      </link>
+
+      <!-- ── Rear right wheel (driven) ── -->
+      <link name="right_wheel">
+        <pose>-1.1 -1.05 0 0 0 0</pose>
+        <inertial><mass>2</mass>
+          <inertia><ixx>0.145833</ixx><ixy>0</ixy><ixz>0</ixz>
+                   <iyy>0.145833</iyy><iyz>0</iyz><izz>0.125</izz></inertia>
+        </inertial>
+        <visual name="tyre">
+          <pose>0 0 0 0 0 3.14159</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///opt/ros/jazzy/share/clearpath_platform_description/meshes/a200/wheels/outdoor.dae</uri>
+              <scale>3.6 3.6 3.6</scale>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name="c">
+          <pose>0 0 0 1.5708 0 0</pose>
+          <geometry><cylinder><radius>0.4</radius><length>0.4</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>1.5</mu><mu2>1.5</mu2>
+            <fdir1>1 0 0</fdir1>
+          </ode></friction></surface>
+        </collision>
+      </link>
+
+      <!-- ── Front left wheel (passive cylinder) ── -->
+      <!-- Low friction (mu=0.05) so front wheels slip freely in all directions.
+           Cylinder geometry needed for ODE stability — sphere+near-zero-friction
+           is numerically unstable and prevents all motion. -->
+      <link name="front_left_wheel">
+        <pose>1.1 1.05 0 0 0 0</pose>
+        <inertial><mass>1</mass>
+          <inertia><ixx>0.08</ixx><ixy>0</ixy><ixz>0</ixz>
+                   <iyy>0.08</iyy><iyz>0</iyz><izz>0.07</izz></inertia>
+        </inertial>
+        <visual name="tyre">
+          <geometry>
+            <mesh>
+              <uri>file:///opt/ros/jazzy/share/clearpath_platform_description/meshes/a200/wheels/outdoor.dae</uri>
+              <scale>3.6 3.6 3.6</scale>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name="c">
+          <pose>0 0 0 1.5708 0 0</pose>
+          <geometry><cylinder><radius>0.4</radius><length>0.4</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>0.05</mu><mu2>0.05</mu2>
+          </ode></friction></surface>
+        </collision>
+      </link>
+
+      <!-- ── Front right wheel (passive cylinder) ── -->
+      <link name="front_right_wheel">
+        <pose>1.1 -1.05 0 0 0 0</pose>
+        <inertial><mass>1</mass>
+          <inertia><ixx>0.08</ixx><ixy>0</ixy><ixz>0</ixz>
+                   <iyy>0.08</iyy><iyz>0</iyz><izz>0.07</izz></inertia>
+        </inertial>
+        <visual name="tyre">
+          <pose>0 0 0 0 0 3.14159</pose>
+          <geometry>
+            <mesh>
+              <uri>file:///opt/ros/jazzy/share/clearpath_platform_description/meshes/a200/wheels/outdoor.dae</uri>
+              <scale>3.6 3.6 3.6</scale>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name="c">
+          <pose>0 0 0 1.5708 0 0</pose>
+          <geometry><cylinder><radius>0.4</radius><length>0.4</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>0.05</mu><mu2>0.05</mu2>
+          </ode></friction></surface>
+        </collision>
+      </link>
+
+      <!-- ── Joints ── -->
+      <joint name="left_wheel_joint" type="revolute">
+        <parent>chassis</parent><child>left_wheel</child>
+        <axis><xyz>0 1 0</xyz><limit><lower>-1e308</lower><upper>1e308</upper></limit></axis>
+      </joint>
+      <joint name="right_wheel_joint" type="revolute">
+        <parent>chassis</parent><child>right_wheel</child>
+        <axis><xyz>0 1 0</xyz><limit><lower>-1e308</lower><upper>1e308</upper></limit></axis>
+      </joint>
+      <joint name="front_left_wheel_joint" type="revolute">
+        <parent>chassis</parent><child>front_left_wheel</child>
+        <axis><xyz>0 1 0</xyz><limit><lower>-1e308</lower><upper>1e308</upper></limit></axis>
+      </joint>
+      <joint name="front_right_wheel_joint" type="revolute">
+        <parent>chassis</parent><child>front_right_wheel</child>
+        <axis><xyz>0 1 0</xyz><limit><lower>-1e308</lower><upper>1e308</upper></limit></axis>
+      </joint>
+
+      <!-- ── Diff-drive plugin (rear wheels only) ── -->
+      <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+        <left_joint>left_wheel_joint</left_joint>
+        <right_joint>right_wheel_joint</right_joint>
+        <wheel_separation>2.1</wheel_separation>
+        <wheel_radius>0.4</wheel_radius>
+        <odom_publish_frequency>10</odom_publish_frequency>
+        <topic>/sen771_robot/cmd_vel</topic>
+        <odom_topic>/sen771_robot/odometry</odom_topic>
+        <frame_id>sen771_robot/odom</frame_id>
+        <child_frame_id>sen771_robot/base_link</child_frame_id>
+        <max_linear_velocity>60.0</max_linear_velocity>
+        <min_linear_velocity>-60.0</min_linear_velocity>
+        <max_angular_velocity>8.0</max_angular_velocity>
+        <min_angular_velocity>-8.0</min_angular_velocity>
+        <max_linear_acceleration>20</max_linear_acceleration>
+        <max_angular_acceleration>20</max_angular_acceleration>
+        <cmd_vel_timeout>-1</cmd_vel_timeout>
+      </plugin>
+
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_nested_model_pose>false</publish_nested_model_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <update_frequency>10</update_frequency>
+      </plugin>
+    </model>
+
+    <!-- ── Field boundary walls (collision only, stop the car going out of bounds) ── -->
+    <model name="wall_north"><static>true</static><pose>60 90.1 0.5 0 0 0</pose>
+      <link name="link"><collision name="c"><geometry><box><size>122 0.2 1</size></box></geometry></collision></link>
+    </model>
+    <model name="wall_south"><static>true</static><pose>60 -0.1 0.5 0 0 0</pose>
+      <link name="link"><collision name="c"><geometry><box><size>122 0.2 1</size></box></geometry></collision></link>
+    </model>
+    <model name="wall_east"><static>true</static><pose>120.1 45 0.5 0 0 0</pose>
+      <link name="link"><collision name="c"><geometry><box><size>0.2 92 1</size></box></geometry></collision></link>
+    </model>
+    <model name="wall_west"><static>true</static><pose>-0.1 45 0.5 0 0 0</pose>
+      <link name="link"><collision name="c"><geometry><box><size>0.2 92 1</size></box></geometry></collision></link>
+    </model>
+
+
+  </world>
+</sdf>
