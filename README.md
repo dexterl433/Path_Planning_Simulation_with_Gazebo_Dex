@@ -176,7 +176,7 @@ Option A — from GitHub:
 ```bash
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
-git clone https://github.com/DexterLMW/sen771_agvc.git
+git clone https://github.com/dexterl433/Path_Planning_Simulation_with_Gazebo_Dex.git sen771_agvc
 ```
 
 Option B — from the zip file: copy the `sen771_agvc/` folder into Ubuntu via Windows Explorer:
