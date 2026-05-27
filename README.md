@@ -91,6 +91,8 @@ Every launch a Python script generates 15 random red obstacles in safe positions
 
 ```
 sen771_agvc/
+├── matlab/
+│   └── SEN771_Project.m       ← MATLAB prototype (test algorithms before Gazebo)
 ├── scripts/
 │   └── generate_world.py      ← random obstacle generator (runs at launch)
 ├── launch/
@@ -109,6 +111,8 @@ sen771_agvc/
 ├── setup.py
 └── setup.cfg
 ```
+
+> **MATLAB users:** Open `matlab/SEN771_Project.m` in MATLAB to visualise and test A\*, BFS, RRT, and Theta\* on the same 120×90m grid without needing ROS 2 or Gazebo.
 
 ---
 
