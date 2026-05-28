@@ -35,9 +35,9 @@ source ~/ros2_ws/install/setup.bash
 ros2 launch sen771_agvc sen771.launch.py
 ```
 
-With a specific obstacle size:
+With custom obstacle sizes (each obstacle randomly sized between min and max):
 ```bash
-ros2 launch sen771_agvc sen771.launch.py obs_size:=5.0
+ros2 launch sen771_agvc sen771.launch.py obs_min:=4 obs_max:=12
 ```
 
 That's it. Gazebo opens, the robot plans its path and drives autonomously.
@@ -70,7 +70,8 @@ sudo apt install python3-colcon-common-extensions
 
 | Argument | Default | Description |
 |---|---|---|
-| `obs_size:=5.0` | random | Average obstacle size in metres |
+| `obs_min:=3` | 3 | Minimum obstacle size in metres (too small = trivial gaps) |
+| `obs_max:=10` | 10 | Maximum obstacle size in metres (too large = robot can't fit through) |
 | `autostart:=false` | true | Start Gazebo paused (press Play manually) |
 | `rviz:=true` | false | Open RViz2 alongside Gazebo |
 

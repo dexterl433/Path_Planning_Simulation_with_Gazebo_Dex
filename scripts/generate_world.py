@@ -6,8 +6,12 @@ Generates 15 random obstacles, writes:
   - /tmp/sen771_obstacles.json  (planner reads this)
 
 Usage:
-  python3 generate_world.py <avg_obstacle_size_metres>
-  python3 generate_world.py          # picks random size 3-8 m
+  python3 generate_world.py <obs_size>
+  python3 generate_world.py 6      # all obstacles base 6 m
+  python3 generate_world.py        # default: 6 m
+
+Each obstacle is randomly oriented tall (base × base*2) or wide (base*2 × base).
+Maximum obs_size: 10 m.
 """
 
 import random
@@ -17,9 +21,9 @@ import sys
 import os
 
 # ── Field ────────────────────────────────────────────────────────────────────
-FIELD_W  = 120.0   # x extent
-FIELD_H  = 90.0    # y extent
-MARGIN   = 6.0     # keep obstacles this far from walls
+FIELD_W  = 120.0
+FIELD_H  = 90.0
+MARGIN   = 6.0
 
 # ── Fixed positions that must stay clear ────────────────────────────────────
 ROBOT_START = (3.0, 45.0)
@@ -29,14 +33,10 @@ TARGETS = [
     (82.5,  75.5),
     (60.5,  54.5),
 ]
-CLEAR_DIST = 10.0   # min distance from robot start and each target
+CLEAR_DIST = 10.0
 
 # ── Obstacle count ───────────────────────────────────────────────────────────
 N_OBS = 15
-
-# ── Obstacle size bounds ─────────────────────────────────────────────────────
-MIN_OBS_BASE = 4.0    # minimum short side (metres)
-MAX_OBS_BASE = 12.0   # maximum short side (metres)
 
 
 def _overlaps_existing(x, y, w, h, placed):
@@ -57,18 +57,15 @@ def _too_close_to_fixed(x, y):
     return False
 
 
-def generate_obstacles(avg_size):
-    placed = []   # list of (x, y, w, h)
+def generate_obstacles(obs_size):
+    placed = []
     for _ in range(N_OBS):
         for _attempt in range(2000):
-            # Size: avg ± 40%, clamped to [MIN_OBS_BASE, MAX_OBS_BASE]
-            # One side is doubled to make fat/thin rectangles
-            base = avg_size * random.uniform(0.6, 1.4)
-            base = max(MIN_OBS_BASE, min(MAX_OBS_BASE, base))
+            # All obstacles use exactly obs_size as the base dimension
             if random.random() < 0.5:
-                w, h = base, base * 2        # tall/fat
+                w, h = obs_size, obs_size * 2   # tall
             else:
-                w, h = base * 2, base        # wide/thin
+                w, h = obs_size * 2, obs_size   # wide
 
             half_w, half_h = w / 2, h / 2
             x = random.uniform(MARGIN + half_w, FIELD_W - MARGIN - half_w)
@@ -82,11 +79,11 @@ def generate_obstacles(avg_size):
             placed.append((x, y, w, h))
             break
         else:
-            # Fallback — find any safe spot (should rarely happen)
+            # Fallback — place anywhere safe (rarely triggered)
             placed.append((
                 random.uniform(20, 100),
                 random.uniform(5,  85),
-                avg_size, avg_size * 2,
+                obs_size, obs_size * 2,
             ))
 
     return placed
@@ -114,21 +111,23 @@ def build_sdf_block(obstacles):
 
 
 def main():
-    # ── Average obstacle size ────────────────────────────────────────────────
-    if len(sys.argv) > 1:
-        try:
-            avg_size = float(sys.argv[1])
-        except ValueError:
-            print(f'[generate_world] Invalid size "{sys.argv[1]}", using random.')
-            avg_size = random.uniform(3.0, 8.0)
-    else:
-        avg_size = random.uniform(3.0, 8.0)
+    DEFAULT_SIZE = 6.0
 
-    avg_size = max(1.0, min(15.0, avg_size))   # clamp to sane range
-    print(f'[generate_world] Average obstacle size: {avg_size:.2f} m')
+    if len(sys.argv) >= 2:
+        try:
+            obs_size = float(sys.argv[1])
+        except ValueError:
+            print('[generate_world] Invalid size — using default 6 m.')
+            obs_size = DEFAULT_SIZE
+    else:
+        obs_size = DEFAULT_SIZE
+
+    # Cap at 10 m
+    obs_size = max(1.0, min(10.0, obs_size))
+    print(f'[generate_world] Obstacle size: {obs_size:.1f} m')
 
     # ── Generate obstacle positions ──────────────────────────────────────────
-    obstacles = generate_obstacles(avg_size)
+    obstacles = generate_obstacles(obs_size)
     print(f'[generate_world] Placed {len(obstacles)} obstacles.')
 
     # ── Load template ────────────────────────────────────────────────────────
@@ -140,24 +139,20 @@ def main():
 
     template_path = os.path.join(share, 'worlds', 'sen771_world_template.sdf')
     if not os.path.exists(template_path):
-        # Try relative fallback (running from sen771_final/scripts/)
         template_path = os.path.join(os.path.dirname(__file__),
                                      '..', 'worlds', 'sen771_world_template.sdf')
 
     with open(template_path) as f:
         template = f.read()
 
-    # ── Fill template ────────────────────────────────────────────────────────
     sdf_block = build_sdf_block(obstacles)
     world_sdf = template.replace('{OBSTACLES}', sdf_block)
 
-    # ── Write generated SDF ──────────────────────────────────────────────────
     out_sdf = '/tmp/sen771_world.sdf'
     with open(out_sdf, 'w') as f:
         f.write(world_sdf)
     print(f'[generate_world] World written → {out_sdf}')
 
-    # ── Write JSON for planner ───────────────────────────────────────────────
     obs_json = [
         {'name': f'O{i+1}', 'x': x, 'y': y, 'w': w, 'h': h}
         for i, (x, y, w, h) in enumerate(obstacles)

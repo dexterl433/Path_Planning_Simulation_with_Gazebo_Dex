@@ -3,7 +3,8 @@ SEN771 AGVC Launch File
 Starts: world generator → Gazebo Ionic + ros_gz_bridge + RViz2 + path planner
 
 Launch arguments:
-  obs_size:=5.0      Average obstacle size in metres (default: random 3-8 m)
+  obs_size:=6    Obstacle size in metres — all 15 obstacles will be this size.
+                 Maximum allowed: 10 m  (default: 6 m)
   autostart:=true    Gazebo starts running immediately (default)
   autostart:=false   Gazebo starts paused — press Play in GUI to begin
   rviz:=true         Launch RViz2 alongside Gazebo
@@ -87,8 +88,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('obs_size',    default_value='0',
-                              description='Average obstacle size in metres (0 = random 3-8 m)'),
+        DeclareLaunchArgument(
+            'obs_size', default_value='6',
+            description='Obstacle size in metres (all 15 obstacles, max 10 m). Default: 6'),
         DeclareLaunchArgument('autostart',   default_value='true',
                               description='Start Gazebo immediately (true) or paused (false)'),
         DeclareLaunchArgument('rviz',        default_value='false',

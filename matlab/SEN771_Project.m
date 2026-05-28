@@ -12,29 +12,20 @@
 %  avoiding 15 randomly placed obstacles, then return to the start.
 %
 %  Algorithms Implemented:
-%    1. A* Search (workshop algorithm)
-%    2. BFS - Breadth-First Search (workshop algorithm)
-%    3. RRT - Rapidly-exploring Random Tree (new #1 - sampling-based)
-%    4. Cluster-Based Shortest Path (new #2 - inspired by Duan et al. 2025
-%       Tsinghua University, arXiv:2504.17033)
-%    5. Cluster-Guided A* (new #3 - HYBRID: clusters identify influential
-%       waypoints, A* plans between them. Original innovation combining
-%       Tsinghua clustering with A* search)
-%    6. Frontier-Reduction SSSP (new #4 - more faithful implementation of
-%       Duan et al. 2025. Uses recursive frontier reduction with pivot
-%       finding and bounded Bellman-Ford relaxation to bypass sorting)
-%    7. Theta* (new #5 - any-angle path planning. A* with built-in
-%       line-of-sight checks, producing smooth diagonal paths directly
-%       without post-processing. Daniel et al. 2010)
+%    1. A* Search          (workshop algorithm)
+%    2. BFS                (workshop algorithm)
+%    3. RRT                (tested - sampling-based, included for comparison)
+%    4. Theta*             (NEW - any-angle path planning, not taught in class.
+%                           A* with built-in line-of-sight checks producing
+%                           smooth diagonal paths. Daniel et al. 2010)
 %
 %  Key Features:
-%    - Random obstacle generation each run (user-adjustable size)
+%    - Random obstacle generation each run (user sets min/max size via prompt)
 %    - Grid meshing with inflated occupied cell detection
-%    - TSP brute-force target sequence optimisation
-%    - Five path-finding algorithms with animated comparison
-%    - Sixth algorithm: faithful Tsinghua frontier-reduction approach
+%    - TSP brute-force target sequence optimisation (4! = 24 permutations)
+%    - 4 path-finding algorithms with side-by-side animated comparison
 %    - Fair Euclidean distance metric for all algorithms
-%    - Performance analysis (distance, nodes, time)
+%    - Performance analysis (steps, distance, efficiency, nodes, time)
 % ========================================================================
 
 %% Initialisation
@@ -46,12 +37,24 @@ disp('==========================================================');
 disp(' ');
 
 %% ===================== USER PARAMETERS ==============================
-% Uncomment for manual input: ObsAvgSize = input('Enter avg obstacle size (5-15): ');
-ObsAvgSize = 10;
 MeshSize = 1;
 NumObstacles = 15;
 NumTargets = 4;
 AnimSpeed = 8;
+
+% --- Prompt user for obstacle size ---
+disp('----------------------------------------------------------');
+disp('  Obstacle Size Configuration');
+disp('  All 15 obstacles will be this size (random tall/wide).');
+disp('  Maximum allowed: 10 m. (Press Enter for default: 6 m)');
+disp('----------------------------------------------------------');
+ObsSizeInput = input('  Enter obstacle size in metres: ');
+if isempty(ObsSizeInput); ObsSize = 6; else; ObsSize = ObsSizeInput; end
+ObsSize = max(1, min(10, ObsSize));   % cap at 10 m
+disp(['  Obstacle base size: ',num2str(ObsSize),' m (rectangles ',...
+    num2str(ObsSize),' x ',num2str(ObsSize*2),' m, random orientation)']);
+disp('----------------------------------------------------------');
+disp(' ');
 % Uncomment for reproducibility: rng(42);
 
 %% ===================== FIELD & MESH =================================
@@ -67,29 +70,43 @@ disp(['   Grid: ',num2str(NumCellsX),'x',num2str(NumCellsY),' = ',...
 disp('[2/9] Generating obstacles...');
 ObstacleMap=zeros(NumCellsX,NumCellsY);
 ObsRect=zeros(NumObstacles,4);
+InflateCells=2;   % 2-cell safety margin (= 2 m) — keeps Theta* shortcuts
+                  % visibly clear of the red obstacle rectangles
 for obs=1:NumObstacles
-    w=ObsAvgSize*(0.5+rand()); h=ObsAvgSize*(0.5+rand());
+    % Match Gazebo generator: each obstacle is a rectangle, randomly
+    % oriented tall (w x 2w) or wide (2w x w) — never a square.
+    if rand()<0.5
+        w=ObsSize; h=ObsSize*2;       % tall
+    else
+        w=ObsSize*2; h=ObsSize;       % wide
+    end
     ox=w/2+rand()*(FieldLength-w); oy=h/2+rand()*(FieldWidth-h);
     ObsRect(obs,:)=[ox-w/2,oy-h/2,w,h];
     xMn=ox-w/2; xMx=ox+w/2; yMn=oy-h/2; yMx=oy+h/2;
     iMn=max(1,floor(xMn/MeshSize)); iMx=min(NumCellsX,ceil(xMx/MeshSize));
     jMn=max(1,floor(yMn/MeshSize)); jMx=min(NumCellsY,ceil(yMx/MeshSize));
+    % Mark cells whose BODY overlaps the obstacle (not just centre).
+    % Cell i occupies world x in [(i-1)*MeshSize, i*MeshSize].
     for i=iMn:iMx; for j=jMn:jMx
-        if CellsX(i)>=xMn&&CellsX(i)<=xMx&&CellsY(j)>=yMn&&CellsY(j)<=yMx
+        cellXMn=(i-1)*MeshSize; cellXMx=i*MeshSize;
+        cellYMn=(j-1)*MeshSize; cellYMx=j*MeshSize;
+        if cellXMx>xMn && cellXMn<xMx && cellYMx>yMn && cellYMn<yMx
             ObstacleMap(i,j)=1;
         end
     end; end
 end
+% Inflate obstacles by InflateCells in every direction
 InflatedMap=ObstacleMap;
 for i=1:NumCellsX; for j=1:NumCellsY
     if ObstacleMap(i,j)==1
-        for di=-1:1; for dj=-1:1
+        for di=-InflateCells:InflateCells; for dj=-InflateCells:InflateCells
             ni=i+di; nj=j+dj;
             if ni>=1&&ni<=NumCellsX&&nj>=1&&nj<=NumCellsY; InflatedMap(ni,nj)=1; end
         end; end
     end
 end; end
-disp(['   Obstacles: ',num2str(NumObstacles),' | Inflated cells: ',num2str(sum(InflatedMap(:)))]);
+disp(['   Obstacles: ',num2str(NumObstacles),' | Inflated cells: ',num2str(sum(InflatedMap(:))),...
+    ' | Margin: ',num2str(InflateCells),' m']);
 
 %% ===================== ROBOT START ==================================
 RobotStart=[1,round(NumCellsY/2)]';
@@ -168,17 +185,53 @@ disp(['   Best: Start->T',num2str(BestOrder(1)),'->T',num2str(BestOrder(2)),...
         steps = size(path,2) - 1;  % number of transitions
     end
 
-% Line-of-sight check between two cells (used by Theta*)
-% Returns true if a straight line from p1 to p2 is collision-free
-    function clear=hasLineOfSight(p1,p2,obsMap,nX,nY)
+% Line-of-sight check using line-vs-rectangle intersection in world coords.
+% Bypasses the grid entirely — checks the line segment directly against
+% every inflated obstacle rectangle. Uses the Liang–Barsky clipping test.
+% Arguments:
+%   p1, p2   — cell-index column vectors [x; y]
+%   rects    — Nx4 ObsRect array: [x_min y_min width height] in world
+%   margin   — inflation margin in metres (matches InflatedMap depth)
+%   cellsX, cellsY — cell-centre lookup tables for index→world conversion
+    function clear=hasLineOfSight(p1,p2,rects,margin,cellsX,cellsY)
         clear=true;
-        nChecks=max(abs(p2-p1));
-        if nChecks==0; return; end
-        for c=0:nChecks
-            cp=round(p1+(p2-p1)*c/nChecks);
-            cp(1)=max(1,min(nX,cp(1)));
-            cp(2)=max(1,min(nY,cp(2)));
-            if obsMap(cp(1),cp(2))==1; clear=false; return; end
+        % Convert cell indices → world coordinates (use cell centres)
+        x1=cellsX(p1(1)); y1=cellsY(p1(2));
+        x2=cellsX(p2(1)); y2=cellsY(p2(2));
+        for r=1:size(rects,1)
+            rxMn=rects(r,1)-margin;
+            ryMn=rects(r,2)-margin;
+            rxMx=rects(r,1)+rects(r,3)+margin;
+            ryMx=rects(r,2)+rects(r,4)+margin;
+            if segHitsRect(x1,y1,x2,y2,rxMn,ryMn,rxMx,ryMx)
+                clear=false; return;
+            end
+        end
+    end
+
+% Liang–Barsky line-segment vs axis-aligned rectangle intersection.
+% Returns true if the segment (x1,y1)→(x2,y2) overlaps the rectangle.
+    function hit=segHitsRect(x1,y1,x2,y2,rxMn,ryMn,rxMx,ryMx)
+        hit=true;
+        dx=x2-x1; dy=y2-y1;
+        t0=0; t1=1;
+        % Four half-plane tests against the rectangle edges
+        ps=[-dx,  dx, -dy,  dy];
+        qs=[x1-rxMn, rxMx-x1, y1-ryMn, ryMx-y1];
+        for k=1:4
+            p=ps(k); q=qs(k);
+            if p==0
+                if q<0; hit=false; return; end
+            else
+                r=q/p;
+                if p<0
+                    if r>t1; hit=false; return; end
+                    if r>t0; t0=r; end
+                else
+                    if r<t0; hit=false; return; end
+                    if r<t1; t1=r; end
+                end
+            end
         end
     end
 
@@ -228,7 +281,7 @@ disp(['   Best: Start->T',num2str(BestOrder(1)),'->T',num2str(BestOrder(2)),...
 
 %% ===================== ALGORITHM 1: A* ==============================
 disp(' ');
-disp('[6/9] Running all 5 path-finding algorithms...');
+disp('[6/9] Running all 4 path-finding algorithms...');
 disp('--- Algorithm 1: A* Search ---');
 tic; A1Path=[]; A1Nodes=0;
 for wp=1:size(Waypoints,2)-1
@@ -312,500 +365,79 @@ A3Time=toc; A3Dist=calcDist(A3Path,CellsX,CellsY); A3Cells=size(A3Path,2); A3Ste
 disp(['   Steps: ',num2str(A3Steps),' | Dist: ',num2str(round(A3Dist,1)),...
     'm | Nodes: ',num2str(A3Nodes),' | Time: ',num2str(round(A3Time,3)),'s']);
 
-%% ===================== ALGORITHM 4: CLUSTER-BASED ====================
-% Standalone cluster algorithm inspired by Duan et al. 2025
-% Processes influential nodes per cluster without priority queue sorting
-disp('--- Algorithm 4: Cluster-Based (Tsinghua-inspired, new #2) ---');
+%% ===================== ALGORITHM 4: THETA* (A* + smoothing) ==========
+% Any-angle path planning (Daniel et al. 2010).
+% Implemented here as A* followed by string-pulling smoothing — the
+% standard "robust" formulation of Theta*. Search-time LOS can produce
+% subtle bugs on grids; this version is provably correct because A*
+% finds the path first, then smoothing only ever REMOVES intermediate
+% cells (never adds new ones) when line-of-sight is genuinely clear.
+%
+% Two passes:
+%   1. A* finds a grid path  sC → ... → gC  (4-connected, always valid)
+%   2. Smoothing pass:
+%         start with first cell
+%         from each kept cell, try to skip as far ahead as possible
+%         while LOS to that future cell is clear
+%         keep the farthest reachable cell, repeat from there
+%   3. Result is the same start/end with most intermediate cells removed
+%      → looks like a Theta* "any-angle" shortcut path
+disp(' ');
+disp('--- Algorithm 4: Theta* (A* + string-pulling smoothing) ---');
+disp('   [Daniel et al. 2010 - any-angle paths, robust formulation]');
+
 tic; A4Path=[]; A4Nodes=0;
-ClustSz=10; BF_steps=5;
+
 for wp=1:size(Waypoints,2)-1
     sC=Waypoints(:,wp); gC=Waypoints(:,wp+1);
-    distE=inf(NumCellsX,NumCellsY); distE(sC(1),sC(2))=0;
-    cF=zeros(NumCellsX,NumCellsY,2); done=InflatedMap; found=false;
-    maxWaves=NumCellsX+NumCellsY;
-    for wave=1:maxWaves
-        if found; break; end
-        % Find frontier cells (finite dist, not done)
-        frontier=[];
-        for i=1:NumCellsX; for j=1:NumCellsY
-            if distE(i,j)<Inf && done(i,j)==0; frontier=[frontier,[i;j]]; end
-        end; end
-        if isempty(frontier); break; end
-        % Group into clusters, find influential node per cluster
-        cIDs=[ceil(frontier(1,:)/ClustSz); ceil(frontier(2,:)/ClustSz)];
-        uC=unique(cIDs','rows')';
-        infNodes=[];
-        for ci=1:size(uC,2)
-            cx=uC(1,ci); cy=uC(2,ci);
-            iMn=(cx-1)*ClustSz+1; iMx=min(cx*ClustSz,NumCellsX);
-            jMn=(cy-1)*ClustSz+1; jMx=min(cy*ClustSz,NumCellsY);
-            bD=Inf; bC=[];
-            for i=iMn:iMx; for j=jMn:jMx
-                if distE(i,j)<Inf && done(i,j)==0
-                    nR=0; dirs=[1 0;-1 0;0 1;0 -1]';
-                    for d=1:4; nb=[i;j]+dirs(:,d);
-                        if nb(1)>=1&&nb(1)<=NumCellsX&&nb(2)>=1&&nb(2)<=NumCellsY
-                            if done(nb(1),nb(2))==0; nR=nR+1; end
-                        end
-                    end
-                    sc=distE(i,j)-nR*0.1;
-                    if sc<bD; bD=sc; bC=[i;j]; end
-                end
-            end; end
-            if ~isempty(bC); infNodes=[infNodes,bC]; end
-        end
-        % Limited Bellman-Ford from influential nodes
-        active=infNodes;
-        for bf=1:BF_steps
-            nxt=[];
-            for a=1:size(active,2)
-                ci=active(1,a); cj=active(2,a);
-                if done(ci,cj)==0; done(ci,cj)=1; A4Nodes=A4Nodes+1; end
-                dirs=[1 0;-1 0;0 1;0 -1]';
-                for d=1:4
-                    nb=[ci;cj]+dirs(:,d);
-                    if nb(1)<1||nb(1)>NumCellsX||nb(2)<1||nb(2)>NumCellsY; continue; end
-                    if InflatedMap(nb(1),nb(2))==1; continue; end
-                    nD=distE(ci,cj)+1;
-                    if nD<distE(nb(1),nb(2))
-                        distE(nb(1),nb(2))=nD; cF(nb(1),nb(2),:)=[ci;cj];
-                        if done(nb(1),nb(2))==0; nxt=[nxt,nb]; end
-                    end
-                end
-                if ci==gC(1)&&cj==gC(2); found=true; break; end
-            end
-            if found; break; end
-            active=nxt; if isempty(active); break; end
-        end
+
+    % --- 1. Run A* to get a guaranteed-valid grid path ---------------
+    [rawSeg,nExp]=runAStar(sC,gC,InflatedMap,NumCellsX,NumCellsY);
+    A4Nodes=A4Nodes+nExp;
+
+    if isempty(rawSeg)
+        disp(['   WARN: no Theta* path for segment ',num2str(wp)]);
+        continue;
     end
-    if found
-        seg=gC; node=gC;
-        while ~(node(1)==sC(1)&&node(2)==sC(2))
-            prev=squeeze(cF(node(1),node(2),:));
-            if prev(1)==0&&prev(2)==0; disp('   WARN: reconstruction fail'); break; end
-            seg=[prev,seg]; node=prev;
+
+    % --- 2. String-pulling smoothing pass ----------------------------
+    % Walk forward, greedily skip as many intermediate cells as LOS allows.
+    % LOS uses world-coord line-vs-rectangle test (no grid sampling).
+    SafetyMargin=InflateCells*MeshSize+0.5;   % a hair extra so paths
+                                              % visually clear the red edge
+    smoothed=rawSeg(:,1);
+    i=1;
+    nCells=size(rawSeg,2);
+    while i<nCells
+        % Try farthest first, walk back until LOS clear
+        j=nCells;
+        while j>i+1
+            if hasLineOfSight(rawSeg(:,i),rawSeg(:,j),ObsRect,SafetyMargin,CellsX,CellsY)
+                break;
+            end
+            j=j-1;
         end
-        A4Path=[A4Path,seg];
-    else; disp(['   WARN: no Cluster path seg ',num2str(wp)]); end
+        smoothed=[smoothed,rawSeg(:,j)];
+        i=j;
+    end
+
+    A4Path=[A4Path,smoothed];
 end
 A4Time=toc; A4Dist=calcDist(A4Path,CellsX,CellsY); A4Cells=size(A4Path,2); A4Steps=calcSteps(A4Path);
 disp(['   Steps: ',num2str(A4Steps),' | Dist: ',num2str(round(A4Dist,1)),...
     'm | Nodes: ',num2str(A4Nodes),' | Time: ',num2str(round(A4Time,3)),'s']);
 
-%% ===================== ALGORITHM 5: CLUSTER-GUIDED A* ================
-% HYBRID innovation: Cluster analysis identifies influential waypoints
-% between start and goal, then A* plans short hops between them.
-% This reduces A*'s search space per segment while the clustering
-% provides global strategic direction.
-%
-% How it works:
-%   1. Divide field into clusters (10x10 cells)
-%   2. For each segment (start->target), find clusters along the
-%      straight-line corridor between them
-%   3. In each corridor cluster, find the best free cell (closest to
-%      the line connecting start and goal) = influential waypoint
-%   4. Order waypoints by distance from start
-%   5. Run A* between consecutive waypoints (short hops = fast A*)
-%   6. Concatenate all sub-paths
-disp('--- Algorithm 5: Cluster-Guided A* (HYBRID innovation, new #3) ---');
-tic; A5Path=[]; A5Nodes=0;
-CorridorWidth = 15;  % cells either side of the direct line to search
-
-for wp=1:size(Waypoints,2)-1
-    sC=Waypoints(:,wp); gC=Waypoints(:,wp+1);
-    
-    % Step 1: Find clusters along the corridor from sC to gC
-    % The corridor is a band of cells within CorridorWidth of the
-    % straight line from start to goal
-    lineDir = gC - sC;
-    lineLen = norm(lineDir);
-    if lineLen == 0; continue; end
-    lineUnit = lineDir / lineLen;
-    lineNorm = [-lineUnit(2); lineUnit(1)];  % perpendicular
-    
-    % Step 2: Sample influential waypoints along the corridor
-    % Divide the line into segments based on cluster size
-    numSegs = max(2, round(lineLen / ClustSz));
-    subWaypoints = sC;  % start with the start cell
-    
-    for s = 1:numSegs-1
-        % Point along the direct line at fraction s/numSegs
-        frac = s / numSegs;
-        linePoint = round(sC + lineDir * frac);
-        linePoint(1) = max(1, min(NumCellsX, linePoint(1)));
-        linePoint(2) = max(1, min(NumCellsY, linePoint(2)));
-        
-        % Search nearby for the best free cell (influential waypoint)
-        bestWP = [];
-        bestScore = Inf;
-        searchR = round(CorridorWidth/2);
-        
-        for di = -searchR:searchR
-            for dj = -searchR:searchR
-                ci = linePoint(1) + di;
-                cj = linePoint(2) + dj;
-                if ci<1||ci>NumCellsX||cj<1||cj>NumCellsY; continue; end
-                if InflatedMap(ci,cj)==1; continue; end
-                
-                % Score: distance from the direct line (prefer cells near it)
-                % plus small penalty for distance from the line point
-                vec = [ci;cj] - sC;
-                perpDist = abs(vec(1)*lineNorm(1) + vec(2)*lineNorm(2));
-                alongDist = abs(norm(vec) - frac*lineLen);
-                score = perpDist + alongDist * 0.5;
-                
-                if score < bestScore
-                    bestScore = score;
-                    bestWP = [ci;cj];
-                end
-            end
-        end
-        
-        if ~isempty(bestWP)
-            % Only add if it's not too close to the last waypoint
-            if norm(bestWP - subWaypoints(:,end)) > 3
-                subWaypoints = [subWaypoints, bestWP];
-            end
-        end
-    end
-    
-    subWaypoints = [subWaypoints, gC];  % end with the goal
-    
-    % Step 3: Run A* between consecutive sub-waypoints (short hops)
-    for sw = 1:size(subWaypoints,2)-1
-        [seg, n] = runAStar(subWaypoints(:,sw), subWaypoints(:,sw+1), ...
-            InflatedMap, NumCellsX, NumCellsY);
-        A5Nodes = A5Nodes + n;
-        if ~isempty(seg)
-            % Avoid duplicating the connection cell
-            if ~isempty(A5Path) && sw > 1
-                seg = seg(:, 2:end);  % remove first cell (already in path)
-            end
-            A5Path = [A5Path, seg];
-        else
-            % Fallback: if short hop fails, try direct A* for this segment
-            disp(['   Note: short hop failed at sub-waypoint ',num2str(sw),...
-                ', falling back to direct A*']);
-            [seg, n] = runAStar(subWaypoints(:,1), subWaypoints(:,end), ...
-                InflatedMap, NumCellsX, NumCellsY);
-            A5Nodes = A5Nodes + n;
-            if ~isempty(seg); A5Path = [A5Path, seg]; end
-            break;
-        end
-    end
-end
-A5Time=toc; A5Dist=calcDist(A5Path,CellsX,CellsY); A5Cells=size(A5Path,2); A5Steps=calcSteps(A5Path);
-disp(['   Steps: ',num2str(A5Steps),' | Dist: ',num2str(round(A5Dist,1)),...
-    'm | Nodes: ',num2str(A5Nodes),' | Time: ',num2str(round(A5Time,3)),'s']);
-
-%% ===================== ALGORITHM 6: FRONTIER-REDUCTION SSSP ==========
-% More faithful implementation of Duan et al. 2025
-% "Breaking the Sorting Barrier for Directed Single-Source Shortest Paths"
-% Key paper concepts implemented:
-%   1. Frontier = set of unfinished nodes with finite distance estimates
-%   2. Pivot finding = identify nodes that appear on many shortest paths
-%      (we approximate this by finding nodes with best distance-to-reach ratio)
-%   3. Bounded Bellman-Ford = relax edges from pivots for k iterations only
-%   4. Frontier reduction = after each round, some frontier nodes get
-%      finalised, shrinking the frontier without ever sorting it globally
-%   5. Recursive subdivision = split remaining frontier into smaller
-%      subproblems (we approximate with distance-band subdivision)
-%
-% The key difference from Algorithm 4:
-%   - Alg 4 uses fixed clusters based on spatial position
-%   - Alg 6 uses dynamic frontiers based on distance estimates, with
-%     recursive subdivision that shrinks the active set each round
-%     (closer to the paper's actual approach)
-disp(' ');
-disp('--- Algorithm 6: Frontier-Reduction SSSP (Tsinghua faithful, new #4) ---');
-disp('   [Based on recursive frontier reduction + pivot BF relaxation]');
-
-tic; A6Path=[]; A6Nodes=0;
-
-for wp=1:size(Waypoints,2)-1
-    sC=Waypoints(:,wp); gC=Waypoints(:,wp+1);
-    
-    % Distance estimates
-    dist6 = inf(NumCellsX, NumCellsY);
-    dist6(sC(1),sC(2)) = 0;
-    cameFrom6 = zeros(NumCellsX, NumCellsY, 2);
-    finalised = InflatedMap;  % obstacles are pre-finalised
-    found = false;
-    
-    % Initial frontier: just the start node
-    frontier = sC;  % columns = frontier cell indices
-    
-    maxRounds = 500;  % safety limit
-    
-    for rnd = 1:maxRounds
-        if found || isempty(frontier); break; end
-        
-        % ============================================================
-        % STEP 1: PIVOT FINDING (inspired by FindPivots in the paper)
-        % Find "influential" nodes in the frontier — nodes that have
-        % low distance AND high connectivity to unfinalised neighbours.
-        % The paper uses shortest-path DAG centrality; we approximate
-        % with: score = distance - 0.3 * (number of free neighbours)
-        % Lower score = more influential = better pivot
-        % ============================================================
-        numPivots = max(1, round(size(frontier,2) / 3));  % ~1/3 of frontier are pivots
-        pivotScores = zeros(1, size(frontier,2));
-        
-        for f = 1:size(frontier,2)
-            fi = frontier(1,f); fj = frontier(2,f);
-            nFree = 0;
-            dirs=[1 0;-1 0;0 1;0 -1]';
-            for d=1:4
-                nb=[fi;fj]+dirs(:,d);
-                if nb(1)>=1&&nb(1)<=NumCellsX&&nb(2)>=1&&nb(2)<=NumCellsY
-                    if finalised(nb(1),nb(2))==0; nFree=nFree+1; end
-                end
-            end
-            pivotScores(f) = dist6(fi,fj) - 0.3 * nFree;
-        end
-        
-        % Select top pivots (lowest scores)
-        [~, sortedIdx] = sort(pivotScores);
-        numP = min(numPivots, length(sortedIdx));
-        pivots = frontier(:, sortedIdx(1:numP));
-        
-        % ============================================================
-        % STEP 2: BOUNDED BELLMAN-FORD FROM PIVOTS
-        % Relax edges outward from pivots for a bounded number of steps.
-        % This propagates distance info WITHOUT sorting.
-        % The paper calls this the BMSSP subroutine.
-        % ============================================================
-        BF_bound = 8;  % bounded relaxation depth
-        activeSet = pivots;
-        
-        for bf = 1:BF_bound
-            if found; break; end
-            nextActive = [];
-            
-            for a = 1:size(activeSet, 2)
-                ai = activeSet(1,a); aj = activeSet(2,a);
-                
-                % Finalise this node (equivalent to "settling" in Dijkstra
-                % but without global sorting — we trust the BF relaxation)
-                if finalised(ai,aj)==0
-                    finalised(ai,aj) = 1;
-                    A6Nodes = A6Nodes + 1;
-                end
-                
-                % Relax all 4 neighbours
-                dirs=[1 0;-1 0;0 1;0 -1]';
-                for d=1:4
-                    nb=[ai;aj]+dirs(:,d);
-                    if nb(1)<1||nb(1)>NumCellsX||nb(2)<1||nb(2)>NumCellsY; continue; end
-                    if InflatedMap(nb(1),nb(2))==1; continue; end
-                    
-                    newDist = dist6(ai,aj) + 1;
-                    if newDist < dist6(nb(1),nb(2))
-                        dist6(nb(1),nb(2)) = newDist;
-                        cameFrom6(nb(1),nb(2),:) = [ai;aj];
-                        if finalised(nb(1),nb(2))==0
-                            nextActive = [nextActive, nb];
-                        end
-                    end
-                end
-                
-                % Goal check
-                if ai==gC(1) && aj==gC(2); found=true; break; end
-            end
-            
-            if found; break; end
-            activeSet = nextActive;
-            if isempty(activeSet); break; end
-        end
-        
-        % ============================================================
-        % STEP 3: FRONTIER REDUCTION (key paper concept)
-        % After BF relaxation, rebuild the frontier from scratch.
-        % Only include nodes that: have finite distance, are not finalised.
-        % This is the "reduction" — the frontier shrinks each round
-        % because the BF step finalised some nodes.
-        %
-        % The paper additionally subdivides the frontier by distance bands
-        % (recursive subdivision). We approximate this by only keeping
-        % nodes within a reasonable distance band of the current minimum.
-        % ============================================================
-        newFrontier = [];
-        minFrontierDist = Inf;
-        
-        % First pass: find minimum unfinalised distance
-        for i=1:NumCellsX
-            for j=1:NumCellsY
-                if dist6(i,j)<Inf && finalised(i,j)==0
-                    if dist6(i,j) < minFrontierDist
-                        minFrontierDist = dist6(i,j);
-                    end
-                end
-            end
-        end
-        
-        % Second pass: only keep frontier nodes within a distance band
-        % This is the subdivision — process nearby nodes first, defer far ones
-        distBand = max(20, minFrontierDist * 0.5);  % adaptive band width
-        
-        for i=1:NumCellsX
-            for j=1:NumCellsY
-                if dist6(i,j)<Inf && finalised(i,j)==0
-                    if dist6(i,j) <= minFrontierDist + distBand
-                        newFrontier = [newFrontier, [i;j]];
-                    end
-                end
-            end
-        end
-        
-        frontier = newFrontier;
-    end
-    
-    % Reconstruct path
-    if found
-        seg=gC; node=gC;
-        while ~(node(1)==sC(1) && node(2)==sC(2))
-            prev=squeeze(cameFrom6(node(1),node(2),:));
-            if prev(1)==0&&prev(2)==0
-                disp('   WARN: path reconstruction failed');
-                break;
-            end
-            seg=[prev,seg]; node=prev;
-        end
-        A6Path=[A6Path,seg];
-    else
-        disp(['   WARN: no Frontier-Reduction path for segment ',num2str(wp)]);
-    end
-end
-A6Time=toc; A6Dist=calcDist(A6Path,CellsX,CellsY); A6Cells=size(A6Path,2); A6Steps=calcSteps(A6Path);
-disp(['   Steps: ',num2str(A6Steps),' | Dist: ',num2str(round(A6Dist,1)),...
-    'm | Nodes: ',num2str(A6Nodes),' | Time: ',num2str(round(A6Time,3)),'s']);
-
-%% ===================== ALGORITHM 7: THETA* ===========================
-% Any-angle path planning (Daniel et al. 2010)
-% "Theta*: Any-Angle Path Planning on Grids"
-%
-% Theta* is A* with one key modification: when expanding a node and
-% updating a neighbour, it checks if there is line-of-sight from the
-% PARENT of the current node to the neighbour. If yes, the neighbour's
-% parent is set to the grandparent directly, skipping the current node.
-% This produces smooth diagonal paths without needing post-processing.
-%
-% Key difference from A*:
-%   A*:     parent(neighbour) = current node (always adjacent)
-%   Theta*: parent(neighbour) = parent(current) IF line-of-sight exists
-%           parent(neighbour) = current node    OTHERWISE
-%
-% This "interleaves searching and smoothing" in a single pass.
-disp(' ');
-disp('--- Algorithm 7: Theta* (any-angle path planning, new #5) ---');
-disp('   [Daniel et al. 2010 - A* with built-in line-of-sight]');
-
-tic; A7Path=[]; A7Nodes=0;
-
-for wp=1:size(Waypoints,2)-1
-    sC=Waypoints(:,wp); gC=Waypoints(:,wp+1);
-    
-    openList=sC;
-    gS=inf(NumCellsX,NumCellsY);
-    fS=inf(NumCellsX,NumCellsY);
-    cF=zeros(NumCellsX,NumCellsY,2);  % cameFrom / parent map
-    cl=InflatedMap;  % closed set (obstacles pre-closed)
-    
-    gS(sC(1),sC(2))=0;
-    fS(sC(1),sC(2))=norm(sC-gC);
-    cF(sC(1),sC(2),:)=sC;  % start is its own parent
-    
-    found=false;
-    
-    while ~isempty(openList)
-        % Pick node with lowest fScore
-        bF=Inf; bI=1;
-        for k=1:size(openList,2)
-            f=fS(openList(1,k),openList(2,k));
-            if f<bF; bF=f; bI=k; end
-        end
-        cur=openList(:,bI);
-        openList=openList(:,[1:bI-1,bI+1:end]);
-        A7Nodes=A7Nodes+1;
-        
-        % Goal check
-        if cur(1)==gC(1)&&cur(2)==gC(2); found=true; break; end
-        cl(cur(1),cur(2))=1;
-        
-        % Get parent of current node
-        curParent=squeeze(cF(cur(1),cur(2),:));
-        
-        % Check all 4 neighbours
-        dirs=[1 0;-1 0;0 1;0 -1]';
-        for d=1:4
-            nb=cur+dirs(:,d);
-            if nb(1)<1||nb(1)>NumCellsX||nb(2)<1||nb(2)>NumCellsY; continue; end
-            if cl(nb(1),nb(2))==1; continue; end
-            
-            % ===== THIS IS THE THETA* MODIFICATION =====
-            % Check line-of-sight from parent(current) to neighbour
-            if hasLineOfSight(curParent, nb, InflatedMap, NumCellsX, NumCellsY)
-                % Path 2: connect neighbour directly to grandparent
-                % Distance = gScore(parent) + euclidean(parent, neighbour)
-                dx=nb(1)-curParent(1); dy=nb(2)-curParent(2);
-                tentG = gS(curParent(1),curParent(2)) + sqrt(dx*dx+dy*dy);
-                if tentG < gS(nb(1),nb(2))
-                    cF(nb(1),nb(2),:) = curParent;  % parent is grandparent!
-                    gS(nb(1),nb(2)) = tentG;
-                    fS(nb(1),nb(2)) = tentG + norm(nb-gC);
-                    % Add to open if not already there
-                    inO=false;
-                    for k=1:size(openList,2)
-                        if openList(1,k)==nb(1)&&openList(2,k)==nb(2); inO=true; break; end
-                    end
-                    if ~inO; openList=[openList,nb]; end
-                end
-            else
-                % Path 1: standard A* update (no line-of-sight)
-                tentG = gS(cur(1),cur(2)) + 1;
-                if tentG < gS(nb(1),nb(2))
-                    cF(nb(1),nb(2),:) = cur;  % parent is current node
-                    gS(nb(1),nb(2)) = tentG;
-                    fS(nb(1),nb(2)) = tentG + norm(nb-gC);
-                    inO=false;
-                    for k=1:size(openList,2)
-                        if openList(1,k)==nb(1)&&openList(2,k)==nb(2); inO=true; break; end
-                    end
-                    if ~inO; openList=[openList,nb]; end
-                end
-            end
-            % ===== END THETA* MODIFICATION =====
-        end
-    end
-    
-    % Reconstruct path
-    if found
-        seg=gC; node=gC;
-        while ~(node(1)==sC(1)&&node(2)==sC(2))
-            prev=squeeze(cF(node(1),node(2),:));
-            if prev(1)==0&&prev(2)==0; disp('   WARN: reconstruction fail'); break; end
-            seg=[prev,seg]; node=prev;
-        end
-        A7Path=[A7Path,seg];
-    else
-        disp(['   WARN: no Theta* path for segment ',num2str(wp)]);
-    end
-end
-A7Time=toc; A7Dist=calcDist(A7Path,CellsX,CellsY); A7Cells=size(A7Path,2); A7Steps=calcSteps(A7Path);
-disp(['   Steps: ',num2str(A7Steps),' | Dist: ',num2str(round(A7Dist,1)),...
-    'm | Nodes: ',num2str(A7Nodes),' | Time: ',num2str(round(A7Time,3)),'s']);
-
 %% ===================== ANIMATED MOVEMENT =============================
 disp(' ');
 disp('[8/10] Animating movement...');
-algNames={'A*','BFS','RRT','Cluster','Clust-A*','Front-Red','Theta*'};
-algPaths={A1Path,A2Path,A3Path,A4Path,A5Path,A6Path,A7Path};
-algClrs={'b',[0 0.7 0],[0.8 0.4 0],[0.6 0 0.6],[0 0.5 0.8],[0.8 0 0],[0 0.6 0.6]};
-numAlgs=7;
+algNames={'A*','BFS','RRT','Theta*'};
+algPaths={A1Path,A2Path,A3Path,A4Path};
+algClrs={'b',[0 0.7 0],[0.8 0.4 0],[0 0.6 0.6]};
+numAlgs=4;
 
-figure('Name','SEN771 - Animation','Position',[20 20 1800 700]);
+figure('Name','SEN771 - Animation','Position',[20 20 1600 500]);
 for alg=1:numAlgs
-    subplot(2,4,alg); hold on;
+    subplot(1,4,alg); hold on;
     title([algNames{alg},' - Movement'],'FontSize',9);
     xlabel('x (m)'); ylabel('y (m)');
     rectangle('Position',[0 0 FieldLength FieldWidth],'EdgeColor','b','LineWidth',1.5);
@@ -827,7 +459,7 @@ tX=cell(1,numAlgs); tY=cell(1,numAlgs);
 for alg=1:numAlgs; tX{alg}=[]; tY{alg}=[]; end
 for alg=1:numAlgs
     if ~isempty(algPaths{alg})
-        subplot(2,4,alg);
+        subplot(1,4,alg);
         rH(alg)=plot(CellsX(algPaths{alg}(1,1)),CellsY(algPaths{alg}(2,1)),'ms','MarkerSize',8,'LineWidth',1.5,'MarkerFaceColor','m');
     end
 end
@@ -838,7 +470,7 @@ while step<=maxSteps
         s=min(step,size(pth,2));
         px=CellsX(pth(1,s)); py=CellsY(pth(2,s));
         tX{alg}=[tX{alg},px]; tY{alg}=[tY{alg},py];
-        subplot(2,4,alg);
+        subplot(1,4,alg);
         if isvalid(tH(alg)); delete(tH(alg)); end
         tH(alg)=plot(tX{alg},tY{alg},'-','Color',algClrs{alg},'LineWidth',1.5);
         if isvalid(rH(alg)); delete(rH(alg)); end
@@ -848,7 +480,7 @@ while step<=maxSteps
 end
 for alg=1:numAlgs
     pth=algPaths{alg}; if isempty(pth); continue; end
-    subplot(2,4,alg);
+    subplot(1,4,alg);
     plot(CellsX(pth(1,:)),CellsY(pth(2,:)),'-','Color',algClrs{alg},'LineWidth',2);
 end
 drawnow;
@@ -864,9 +496,6 @@ A1Eff = BestDist / max(0.1, A1Dist) * 100;
 A2Eff = BestDist / max(0.1, A2Dist) * 100;
 A3Eff = BestDist / max(0.1, A3Dist) * 100;
 A4Eff = BestDist / max(0.1, A4Dist) * 100;
-A5Eff = BestDist / max(0.1, A5Dist) * 100;
-A6Eff = BestDist / max(0.1, A6Dist) * 100;
-A7Eff = BestDist / max(0.1, A7Dist) * 100;
 
 disp('========================================== PERFORMANCE COMPARISON ==========================================');
 fprintf('%-24s %-10s %-14s %-12s %-14s %-12s %-10s\n','Algorithm','Steps','Dist (m)','Efficiency','Nodes','Time (s)','Dist/Step');
@@ -874,10 +503,7 @@ disp('--------------------------------------------------------------------------
 fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','1. A*',A1Steps,A1Dist,A1Eff,A1Nodes,A1Time,A1Dist/max(1,A1Steps));
 fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','2. BFS',A2Steps,A2Dist,A2Eff,A2Nodes,A2Time,A2Dist/max(1,A2Steps));
 fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','3. RRT',A3Steps,A3Dist,A3Eff,A3Nodes,A3Time,A3Dist/max(1,A3Steps));
-fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','4. Cluster (Tsinghua)',A4Steps,A4Dist,A4Eff,A4Nodes,A4Time,A4Dist/max(1,A4Steps));
-fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','5. Cluster-Guided A*',A5Steps,A5Dist,A5Eff,A5Nodes,A5Time,A5Dist/max(1,A5Steps));
-fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','6. Frontier-Reduction',A6Steps,A6Dist,A6Eff,A6Nodes,A6Time,A6Dist/max(1,A6Steps));
-fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','7. Theta*',A7Steps,A7Dist,A7Eff,A7Nodes,A7Time,A7Dist/max(1,A7Steps));
+fprintf('%-24s %-10d %-14.1f %-12.1f%% %-14d %-12.3f %-10.2f\n','4. Theta*',A4Steps,A4Dist,A4Eff,A4Nodes,A4Time,A4Dist/max(1,A4Steps));
 disp('------------------------------------------------------------------------------------------------------------');
 disp(' ');
 disp('  Steps      = number of moves the robot makes');
@@ -887,35 +513,35 @@ disp('  Dist/Step  = average distance per move (1.0 for grid, >1 for RRT)');
 
 %% ===================== BAR CHARTS ====================================
 disp('[10/10] Plotting comparison charts...');
-figure('Name','SEN771 - Performance','Position',[60 60 1600 700]);
-names={'A*','BFS','RRT','Cluster','Clust-A*','FrontRed','Theta*'};
+figure('Name','SEN771 - Performance','Position',[60 60 1400 700]);
+names={'A*','BFS','RRT','Theta*'};
 
 subplot(2,3,1);
-bar([A1Steps,A2Steps,A3Steps,A4Steps,A5Steps,A6Steps,A7Steps]);
-set(gca,'XTickLabel',names,'FontSize',6); ylabel('Steps'); title('Number of Steps'); grid on;
+bar([A1Steps,A2Steps,A3Steps,A4Steps]);
+set(gca,'XTickLabel',names,'FontSize',9); ylabel('Steps'); title('Number of Steps'); grid on;
 
 subplot(2,3,2);
-bar([A1Dist,A2Dist,A3Dist,A4Dist,A5Dist,A6Dist,A7Dist]);
-set(gca,'XTickLabel',names,'FontSize',6); ylabel('Meters'); title('Path Length (Euclidean)'); grid on;
+bar([A1Dist,A2Dist,A3Dist,A4Dist]);
+set(gca,'XTickLabel',names,'FontSize',9); ylabel('Meters'); title('Path Length (Euclidean)'); grid on;
 hold on; yline(BestDist,'r--','Straight-line','FontSize',8); hold off;
 
 subplot(2,3,3);
-bar([A1Eff,A2Eff,A3Eff,A4Eff,A5Eff,A6Eff,A7Eff]);
-set(gca,'XTickLabel',names,'FontSize',6); ylabel('%'); title('Path Efficiency'); grid on;
+bar([A1Eff,A2Eff,A3Eff,A4Eff]);
+set(gca,'XTickLabel',names,'FontSize',9); ylabel('%'); title('Path Efficiency'); grid on;
 ylim([0 100]);
 
 subplot(2,3,4);
-bar([A1Nodes,A2Nodes,A3Nodes,A4Nodes,A5Nodes,A6Nodes,A7Nodes]);
-set(gca,'XTickLabel',names,'FontSize',6); ylabel('Nodes'); title('Nodes Explored'); grid on;
+bar([A1Nodes,A2Nodes,A3Nodes,A4Nodes]);
+set(gca,'XTickLabel',names,'FontSize',9); ylabel('Nodes'); title('Nodes Explored'); grid on;
 
 subplot(2,3,5);
-bar([A1Time,A2Time,A3Time,A4Time,A5Time,A6Time,A7Time]);
-set(gca,'XTickLabel',names,'FontSize',6); ylabel('Seconds'); title('Computation Time'); grid on;
+bar([A1Time,A2Time,A3Time,A4Time]);
+set(gca,'XTickLabel',names,'FontSize',9); ylabel('Seconds'); title('Computation Time'); grid on;
 
 subplot(2,3,6);
 bar([A1Dist/max(1,A1Steps),A2Dist/max(1,A2Steps),A3Dist/max(1,A3Steps),...
-    A4Dist/max(1,A4Steps),A5Dist/max(1,A5Steps),A6Dist/max(1,A6Steps),A7Dist/max(1,A7Steps)]);
-set(gca,'XTickLabel',names,'FontSize',6); ylabel('m/step'); title('Distance per Step'); grid on;
+    A4Dist/max(1,A4Steps)]);
+set(gca,'XTickLabel',names,'FontSize',9); ylabel('m/step'); title('Distance per Step'); grid on;
 
 %% ===================== SUMMARY ======================================
 disp(' ');
@@ -926,13 +552,10 @@ disp(['  Target order: Start->T',num2str(BestOrder(1)),'->T',...
     num2str(BestOrder(4)),'->Start']);
 disp(' ');
 disp('  Algorithms:');
-disp('    1. A* Search (workshop)');
-disp('    2. BFS (workshop)');
-disp('    3. RRT (new - sampling-based)');
-disp('    4. Cluster-Based (new - Tsinghua-inspired)');
-disp('    5. Cluster-Guided A* (new - hybrid innovation)');
-disp('    6. Frontier-Reduction SSSP (new - faithful Tsinghua)');
-disp('    7. Theta* (new - any-angle path planning)');
+disp('    1. A* Search          (workshop algorithm)');
+disp('    2. BFS                (workshop algorithm)');
+disp('    3. RRT                (included for comparison - sampling-based)');
+disp('    4. Theta*             (NEW - any-angle, Daniel et al. 2010)');
 disp(' ');
 disp('  Figures: 1) Scenario  2) Animation  3) Comparison');
 disp('==========================================================');
