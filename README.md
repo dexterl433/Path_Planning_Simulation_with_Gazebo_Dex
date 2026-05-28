@@ -1,4 +1,9 @@
 # SEN771 AGVC — Path Planning Simulation
+
+![Simulation Preview](images/simulation_preview.jpg)
+
+*Husky A200 navigating a randomly generated 120 × 90 m field in Gazebo Ionic. Red boxes are obstacles, coloured circles are the four targets the robot must visit before returning to start.*
+
 **Student:** Dexter Leong | s223026243
 **Unit:** SEN771 Intelligent Autonomous Robots
 
