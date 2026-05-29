@@ -223,48 +223,7 @@
 
     {OBSTACLES}
 
-    <!-- ═══════════════════════════════════════════════
-         4 TARGET MARKERS  (tall cylinders, distinct colours)
-         Positions from MATLAB sample: T1-T4
-    ═══════════════════════════════════════════════ -->
-
-    <!-- T1: right side – Blue (flat disc on ground)
-         Moved inward from spec X=119.5 to X=116.0 so the 2 m disc + the
-         3 m-long robot can fit inside the field without crashing the wall. -->
-    <model name="target_1"><static>true</static><pose>116.0 54.5 0.05 0 0 0</pose>
-      <link name="link">
-        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
-        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
-          <material><ambient>0.0 0.3 1.0 1</ambient><diffuse>0.0 0.3 1.0 1</diffuse></material></visual>
-      </link>
-    </model>
-
-    <!-- T2: lower right – Orange (flat disc on ground) -->
-    <model name="target_2"><static>true</static><pose>82.5 15.5 0.05 0 0 0</pose>
-      <link name="link">
-        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
-        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
-          <material><ambient>1.0 0.4 0.0 1</ambient><diffuse>1.0 0.4 0.0 1</diffuse></material></visual>
-      </link>
-    </model>
-
-    <!-- T3: upper right – Purple (flat disc on ground) -->
-    <model name="target_3"><static>true</static><pose>82.5 75.5 0.05 0 0 0</pose>
-      <link name="link">
-        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
-        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
-          <material><ambient>0.7 0.0 0.9 1</ambient><diffuse>0.7 0.0 0.9 1</diffuse></material></visual>
-      </link>
-    </model>
-
-    <!-- T4: centre area – Yellow (flat disc on ground) -->
-    <model name="target_4"><static>true</static><pose>60.5 54.5 0.05 0 0 0</pose>
-      <link name="link">
-        <collision name="c"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry></collision>
-        <visual name="v"><geometry><cylinder><radius>2.0</radius><length>0.1</length></cylinder></geometry>
-          <material><ambient>1.0 0.9 0.0 1</ambient><diffuse>1.0 0.9 0.0 1</diffuse></material></visual>
-      </link>
-    </model>
+    {TARGETS}
 
     <!-- ═══════════════════════════════════════════════
          ROBOT  (Clearpath Husky A200, diff-drive on rear wheels)

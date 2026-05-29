@@ -105,6 +105,7 @@ class SEN771PlannerNode(Node):
         super().__init__('sen771_planner')
 
         # ── Robot pose (written by pose callbacks, read by drive thread) ──
+        self._tsp_order     = None     # set after TSP; used in plots
         self._lock          = threading.Lock()
         self._rx            = ROBOT_START_M[0]
         self._ry            = ROBOT_START_M[1]
@@ -191,6 +192,27 @@ class SEN771PlannerNode(Node):
         self.get_logger().info('Starting path planning.')
         time.sleep(0.5)
 
+        # 1b. Re-read map JSONs now — Gazebo being alive guarantees generate_world.py
+        #     has finished writing the files. The module-level read at import time can
+        #     race against generate_world.py when launch starts both in parallel.
+        global OBS, TARGET_POS
+        if os.path.exists(_OBS_JSON):
+            with open(_OBS_JSON) as _jf:
+                OBS = [(d['name'], d['x'], d['y'], d['w'], d['h'])
+                       for d in json.load(_jf)]
+            self.get_logger().info(f'[map] Reloaded {len(OBS)} obstacles from {_OBS_JSON}')
+        else:
+            self.get_logger().warn('[map] No obstacle JSON found — using fallback layout')
+
+        if os.path.exists(_TGT_JSON):
+            with open(_TGT_JSON) as _jf:
+                TARGET_POS = [(d['x'], d['y']) for d in json.load(_jf)]
+            self.get_logger().info(f'[map] Reloaded {len(TARGET_POS)} targets from {_TGT_JSON}')
+            for i, (tx, ty) in enumerate(TARGET_POS):
+                self.get_logger().info(f'       T{i+1}: ({tx:.1f}, {ty:.1f})')
+        else:
+            self.get_logger().warn('[map] No target JSON found — using fallback positions')
+
         # 2. Build occupancy grid
         self.get_logger().info('[1/5] Building 120x90 occupancy grid...')
         grid, inflated = self._build_grid()
@@ -203,9 +225,11 @@ class SEN771PlannerNode(Node):
         self.get_logger().info('[2/5] Running TSP optimisation...')
         target_cells    = [self._m2cell(tx, ty) for tx, ty in TARGET_POS]
         start_cell      = self._m2cell(*ROBOT_START_M)
-        best_order      = self._tsp(start_cell, target_cells)
-        ordered_targets = [target_cells[i] for i in best_order]
-        order_str       = ' → '.join(f'T{i+1}' for i in best_order)
+        best_order         = self._tsp(start_cell, target_cells)
+        self._tsp_order    = best_order   # stored for plot labelling
+        ordered_targets    = [target_cells[i]  for i in best_order]
+        ordered_target_pos = [TARGET_POS[i]    for i in best_order]  # actual metres
+        order_str          = ' → '.join(f'T{i+1}' for i in best_order)
         self.get_logger().info(f'      Best TSP order: Start → {order_str} → Start')
 
         # 4. Run all four algorithms
@@ -255,7 +279,8 @@ class SEN771PlannerNode(Node):
             self._reset_robot_pose(start_cell)
             actual, simple_m = self._drive_path(
                 results[algo]['path'], inflated,
-                results[algo]['anchors'], smooth=smooth)
+                results[algo]['anchors'], smooth=smooth,
+                ordered_target_pos=ordered_target_pos)
             actual_paths[label]     = actual
             simplified_paths[label] = simple_m
 
@@ -613,7 +638,7 @@ class SEN771PlannerNode(Node):
         service so each driving variant gets a fair, identical starting state.
         """
         import subprocess
-        x, y = self._cell2m(*start_cell)
+        x, y = ROBOT_START_M   # exact spawn position, not cell-centre
         req = (f'name: "sen771_robot" '
                f'position {{x: {x} y: {y} z: 0.45}} '
                f'orientation {{w: 1.0}}')
@@ -650,7 +675,7 @@ class SEN771PlannerNode(Node):
         steer = max(-3.0, min(3.0, steer))
         return fwd_hit * 0.6, steer
 
-    def _drive_path(self, path, inflated, anchors, smooth=True):
+    def _drive_path(self, path, inflated, anchors, smooth=True, ordered_target_pos=None):
         """Pure Pursuit path tracking — smooth curved motion, no stop-and-turn pivots.
 
         Instead of aiming at discrete waypoints (which forces the robot to stop
@@ -683,8 +708,15 @@ class SEN771PlannerNode(Node):
         CRUISE_SPD = 10.0  # m/s straight-line cruise
         GOAL_D     = 6.0   # m  — declare path complete within this distance of last cell
 
-        # Anchor points (start + targets + start) — log when robot passes within 5 m
+        # Anchor points (start + targets + start).
+        # Use actual world coordinates for target anchors so the robot aims at
+        # the real disc positions, not the grid-snapped nearest-free-cell.
         anchor_ms = [self._cell2m(*c) for c in (anchors or [])]
+        if ordered_target_pos:
+            # anchors layout: [start, T_tsp0, T_tsp1, ..., start]
+            for k, (tx, ty) in enumerate(ordered_target_pos):
+                if k + 1 < len(anchor_ms):
+                    anchor_ms[k + 1] = (tx, ty)
         visited   = set()
 
         # Stuck guard — uses real ground-truth position (no odometry drift)
@@ -725,7 +757,7 @@ class SEN771PlannerNode(Node):
 
             # ── Log anchor passes — stop, wait, then align to next segment ───
             for k, (ax, ay) in enumerate(anchor_ms):
-                if k not in visited and math.hypot(ax - rx, ay - ry) < 2.0:
+                if k not in visited and math.hypot(ax - rx, ay - ry) < 0.3:
                     visited.add(k)
                     self.get_logger().info(
                         f'    ✓ anchor {k}/{len(anchor_ms)-1}'
@@ -842,6 +874,8 @@ class SEN771PlannerNode(Node):
 
             # ── Steer directly at next unvisited target when close ───────────
             aim_override = False
+            is_real_target = (next_anc_k is not None and
+                              0 < next_anc_k < len(anchor_ms) - 1)
             if next_anc_k is not None:
                 if next_anc_d < 8.0:
                     aim_override = True
@@ -873,15 +907,14 @@ class SEN771PlannerNode(Node):
             # cap vx to 4 m/s while the robot is still near spawn — that low
             # speed combined with any initial heading correction looks like spinning.
             vx = max(min_spd, vx)
-            # Proximity slowdown — applied AFTER min_spd so it always wins
-            if ptr >= 30:
-                for k, (ax, ay) in enumerate(anchor_ms):
-                    if k in visited:
-                        continue
-                    d_anc = math.hypot(ax - rx, ay - ry)
-                    if d_anc < 20.0:
-                        vx = min(vx, max(1.5, d_anc * 0.25))
-                    break
+            # Target approach slowdown — only for real T1-T4 anchors, not start/return.
+            # Whole-car geometry: chassis 3.0×1.7 m, disc radius 2.0 m.
+            # Rear corner clears the disc edge when centre is ≤0.31 m from disc centre.
+            # Floor of 0.2 m/s ensures the car is nearly stopped as it crosses that line.
+            # Applied AFTER min_spd floor so it always wins.
+            if is_real_target and next_anc_d < 30.0:
+                approach_cap = max(0.2, next_anc_d * 0.25)  # 30m→7.5, 10m→2.5, 0.8m→0.2
+                vx = min(vx, approach_cap)
 
             # ── Angular velocity — Pure Pursuit + low-pass smoothing ────────────
             wz_raw  = max(-10.0, min(10.0, vx * kappa))
@@ -1011,16 +1044,22 @@ class SEN771PlannerNode(Node):
                     fontsize=7, fontweight='bold', color='white', zorder=3)
 
         # ── Targets ──────────────────────────────────────────────────────
-        # Visual radius 0.5 m so the T1 marker (X = 119.5, only 0.5 m from
-        # the east boundary) fits exactly inside the field rectangle.
+        # Build reverse lookup: input index → TSP visit position (1-based)
         tgt_clrs = ['#2288FF', '#FF8800', '#AA00FF', '#FFCC00']
+        visit_pos = {}   # input index → visit order (1,2,3,4)
+        if self._tsp_order:
+            for rank, idx in enumerate(self._tsp_order):
+                visit_pos[idx] = rank + 1
+        ordinal = ['1st', '2nd', '3rd', '4th']
         for i, (tc, clr) in enumerate(
                 zip([self._m2cell(tx, ty) for tx, ty in TARGET_POS], tgt_clrs)):
-            ax.add_patch(plt.Circle((tc[0] + 0.5, tc[1] + 0.5), 0.5,
+            ax.add_patch(plt.Circle((tc[0] + 0.5, tc[1] + 0.5), 1.2,
                                     color=clr, ec='black', lw=0.7, zorder=6))
-            ax.text(tc[0] + 0.5, tc[1] + 0.5, f'T{i+1}',
+            rank = visit_pos.get(i)
+            label = f'T{i+1}\n{ordinal[rank-1]}' if rank else f'T{i+1}'
+            ax.text(tc[0] + 0.5, tc[1] + 0.5, label,
                     ha='center', va='center', fontsize=6, fontweight='bold',
-                    color='white', zorder=7)
+                    color='white', zorder=7, linespacing=1.1)
 
     def _save_planned_plot(self, grid, inflated, results, target_cells, start_cell):
         styles = {
@@ -1031,9 +1070,13 @@ class SEN771PlannerNode(Node):
         }
 
         # ── Per-algorithm 2×2 plot (each algo gets its own panel) ─────────
+        tsp_str = ('Start → ' +
+                   ' → '.join(f'T{i+1}' for i in self._tsp_order) +
+                   ' → Start') if self._tsp_order else ''
         fig, axes = plt.subplots(2, 2, figsize=(22, 18))
-        fig.suptitle('SEN771 Planned Paths — One Panel per Algorithm',
-                     fontsize=16, fontweight='bold')
+        fig.suptitle(f'SEN771 Planned Paths — One Panel per Algorithm\n'
+                     f'TSP optimal visit order: {tsp_str}',
+                     fontsize=15, fontweight='bold')
         algo_order = ['A*', 'BFS', 'RRT', 'Theta*']
         for ax, name in zip(axes.flat, algo_order):
             ax.set_xlim(-1, NX + 1)
@@ -1080,9 +1123,12 @@ class SEN771PlannerNode(Node):
         n = len(labels)
         rows, cols = (2, 2) if n == 4 else (1, n)
         fig, axes = plt.subplots(rows, cols, figsize=(cols * 11, rows * 9), squeeze=False)
-        fig.suptitle('SEN771 — Planned (colour) vs Actual (black) — '
-                     '● start  ▲ end',
-                     fontsize=15, fontweight='bold')
+        tsp_str = ('Start → ' +
+                   ' → '.join(f'T{i+1}' for i in self._tsp_order) +
+                   ' → Start') if self._tsp_order else ''
+        fig.suptitle(f'SEN771 — Planned (colour) vs Actual (black) — ● start  ▲ end\n'
+                     f'TSP visit order: {tsp_str}',
+                     fontsize=14, fontweight='bold')
         plan_clr = {'A*': 'red', 'BFS': 'limegreen',
                     'RRT': 'darkorange', 'Theta*': 'cyan'}
         spec_map = {s[0]: s for s in run_specs}

@@ -30,7 +30,7 @@ MARGIN   = 6.0
 ROBOT_START = (3.0, 45.0)
 CLEAR_DIST  = 10.0
 N_OBS       = 15
-INFLATE_M   = 2.5   # safety margin in metres (matches planner's InflateCells*MESH+0.5)
+INFLATE_M   = 3.5   # safety margin: planner inflates 3 cells + 0.5 m buffer
 
 
 def _overlaps_existing(x, y, w, h, placed, min_spacing):
@@ -46,7 +46,7 @@ def _too_close_to_start(x, y):
 
 
 def generate_obstacles(obs_size):
-    min_spacing = obs_size * 1.5 + 3.0
+    min_spacing = 5.0  # metres gap between obstacle edges (planner inflates 2.5 m each side)
     placed = []
     for _ in range(N_OBS):
         for _attempt in range(2000):
@@ -189,6 +189,39 @@ def pick_targets_input(obstacles):
     return targets
 
 
+_TARGET_COLOURS = [
+    ('0.0 0.3 1.0', 'Blue'),
+    ('1.0 0.4 0.0', 'Orange'),
+    ('0.7 0.0 0.9', 'Purple'),
+    ('1.0 0.9 0.0', 'Yellow'),
+]
+
+
+def build_target_sdf_block(targets):
+    lines = [
+        '    <!-- ═══════════════════════════════════════════════',
+        '         4 TARGET MARKERS  (flat discs, user-selected positions)',
+        '    ═══════════════════════════════════════════════ -->',
+        '',
+    ]
+    for i, (tx, ty) in enumerate(targets):
+        colour, label = _TARGET_COLOURS[i % len(_TARGET_COLOURS)]
+        name = f'target_{i+1}'
+        lines.append(
+            f'    <!-- T{i+1}: {label} -->\n'
+            f'    <model name="{name}"><static>true</static>'
+            f'<pose>{tx:.2f} {ty:.2f} 0.05 0 0 0</pose>\n'
+            f'      <link name="link">'
+            f'<collision name="c"><geometry><cylinder><radius>2.0</radius>'
+            f'<length>0.1</length></cylinder></geometry></collision>\n'
+            f'      <visual name="v"><geometry><cylinder><radius>2.0</radius>'
+            f'<length>0.1</length></cylinder></geometry>\n'
+            f'        <material><ambient>{colour} 1</ambient>'
+            f'<diffuse>{colour} 1</diffuse></material></visual></link></model>\n'
+        )
+    return '\n'.join(lines)
+
+
 def build_sdf_block(obstacles):
     lines = [
         '    <!-- ═══════════════════════════════════════════════',
@@ -225,6 +258,11 @@ def main():
     obs_size = max(1.0, min(10.0, obs_size))
     print(f'[generate_world] Obstacle size: {obs_size:.1f} m')
 
+    # ── Remove stale JSON so planner can detect a failed run ────────────────
+    for _f in ('/tmp/sen771_obstacles.json', '/tmp/sen771_targets.json'):
+        if os.path.exists(_f):
+            os.remove(_f)
+
     # ── Generate obstacles ───────────────────────────────────────────────────
     obstacles = generate_obstacles(obs_size)
     print(f'[generate_world] Placed {len(obstacles)} obstacles.')
@@ -260,7 +298,8 @@ def main():
         template = f.read()
 
     sdf_block = build_sdf_block(obstacles)
-    world_sdf = template.replace('{OBSTACLES}', sdf_block)
+    target_sdf_block = build_target_sdf_block(targets)
+    world_sdf = template.replace('{OBSTACLES}', sdf_block).replace('{TARGETS}', target_sdf_block)
 
     out_sdf = '/tmp/sen771_world.sdf'
     with open(out_sdf, 'w') as f:
