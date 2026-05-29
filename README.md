@@ -19,6 +19,8 @@ Key features:
 - **Stop / wait / turn at every target**: robot fully stops inside each disc, pauses, then rotates to face the next outgoing direction before continuing
 - **Whole-car detection**: trigger fires only when the entire 3.0 × 1.7 m chassis is inside the 2.0 m-radius disc (centre-to-centre ≤ 0.3 m)
 
+![Simulation preview](images/image_showing_what_the_simulation_look_like.jpg)
+
 ---
 
 ## System Requirements
