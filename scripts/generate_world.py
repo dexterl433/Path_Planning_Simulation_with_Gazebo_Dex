@@ -164,9 +164,24 @@ def pick_targets_click(obstacles):
     WIN_TITLE = 'SEN771 - Click 4 Targets'
     fig.canvas.manager.set_window_title(WIN_TITLE)
 
-    # WSL2/WSLg: focus_force() works at the X11 level but WSLg also needs a
-    # Windows-level activation so the compositor routes mouse events here.
-    # PowerShell AppActivate() does that without needing admin rights.
+    # WSL2/WSLg: after a Windows/WSLg update the compositor puts all X11 windows
+    # into COPY MODE (title shows "[WARN:COPY MODE]"), which intercepts mouse clicks.
+    # fix_focus() grabs Windows-level focus via Win32 SetForegroundWindow on the
+    # msrdc.exe process that owns the WSLg window — confirmed working on WSL2.
+    # X11-level focus_force() runs first as a fallback for non-WSL environments.
+    _PS_SCRIPT = r"""
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class WinHelper {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+}
+'@
+$w = Get-Process msrdc -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*SEN771*' }
+if ($w) { [WinHelper]::ShowWindow($w.MainWindowHandle, 9); [WinHelper]::SetForegroundWindow($w.MainWindowHandle) }
+"""
+
     def _grab_focus():
         import subprocess as _sp
         try:
@@ -180,8 +195,7 @@ def pick_targets_click(obstacles):
         try:
             _sp.Popen(
                 ['/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',
-                 '-Command',
-                 f'(New-Object -ComObject WScript.Shell).AppActivate("{WIN_TITLE}")'],
+                 '-Command', _PS_SCRIPT],
                 stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
             )
         except Exception:
