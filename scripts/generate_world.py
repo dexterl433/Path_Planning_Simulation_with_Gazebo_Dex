@@ -161,14 +161,34 @@ def pick_targets_click(obstacles):
                  color=[0, 0.5, 0])
     plt.tight_layout()
 
-    # Force window to front on WSL2/WSLg — without this the Tk window opens
-    # behind the terminal and WSLg doesn't pass clicks through until it has focus.
+    WIN_TITLE = 'SEN771 - Click 4 Targets'
+    fig.canvas.manager.set_window_title(WIN_TITLE)
+
+    # WSL2/WSLg: focus_force() works at the X11 level but WSLg also needs a
+    # Windows-level activation so the compositor routes mouse events here.
+    # PowerShell AppActivate() does that without needing admin rights.
+    def _grab_focus():
+        import subprocess as _sp
+        try:
+            win = fig.canvas.manager.window
+            win.lift()
+            win.attributes('-topmost', True)
+            win.focus_force()
+            win.after(200, lambda: win.attributes('-topmost', False))
+        except Exception:
+            pass
+        try:
+            _sp.Popen(
+                ['/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',
+                 '-Command',
+                 f'(New-Object -ComObject WScript.Shell).AppActivate("{WIN_TITLE}")'],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        except Exception:
+            pass
+
     try:
-        win = fig.canvas.manager.window
-        win.lift()
-        win.attributes('-topmost', True)
-        win.focus_force()
-        win.attributes('-topmost', False)  # allow other windows on top after focus
+        fig.canvas.manager.window.after(300, _grab_focus)
     except Exception:
         pass
 
