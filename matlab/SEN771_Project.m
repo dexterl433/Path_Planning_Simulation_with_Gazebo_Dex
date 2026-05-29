@@ -15,9 +15,10 @@
 %    1. A* Search          (workshop algorithm)
 %    2. BFS                (workshop algorithm)
 %    3. RRT                (tested - sampling-based, included for comparison)
-%    4. Theta*             (NEW - any-angle path planning, not taught in class.
-%                           A* with built-in line-of-sight checks producing
-%                           smooth diagonal paths. Daniel et al. 2010)
+%    4. Theta*             (NEW - true any-angle path planning, Daniel et al. 2010.
+%                           Single-pass: LOS from grandparent to neighbour checked
+%                           DURING search. Parent assignment skips intermediate
+%                           nodes when line-of-sight is clear. Not A* + smoothing.)
 %
 %  Key Features:
 %    - Random obstacle generation each run (user sets min/max size via prompt)
@@ -384,66 +385,118 @@ A3Time=toc; A3Dist=calcDist(A3Path,CellsX,CellsY); A3Cells=size(A3Path,2); A3Ste
 disp(['   Steps: ',num2str(A3Steps),' | Dist: ',num2str(round(A3Dist,1)),...
     'm | Nodes: ',num2str(A3Nodes),' | Time: ',num2str(round(A3Time,3)),'s']);
 
-%% ===================== ALGORITHM 4: THETA* (A* + smoothing) ==========
-% Any-angle path planning (Daniel et al. 2010).
-% Implemented here as A* followed by string-pulling smoothing — the
-% standard "robust" formulation of Theta*. Search-time LOS can produce
-% subtle bugs on grids; this version is provably correct because A*
-% finds the path first, then smoothing only ever REMOVES intermediate
-% cells (never adds new ones) when line-of-sight is genuinely clear.
+%% ===================== ALGORITHM 4: THETA* ===========================
+% True any-angle path planning — Daniel et al. 2010
+% "Theta*: Any-Angle Path Planning on Grids"
 %
-% Two passes:
-%   1. A* finds a grid path  sC → ... → gC  (4-connected, always valid)
-%   2. Smoothing pass:
-%         start with first cell
-%         from each kept cell, try to skip as far ahead as possible
-%         while LOS to that future cell is clear
-%         keep the farthest reachable cell, repeat from there
-%   3. Result is the same start/end with most intermediate cells removed
-%      → looks like a Theta* "any-angle" shortcut path
+% The key difference from A*:
+%   A*:     when updating neighbour nb from current node s,
+%           always set parent(nb) = s  (must be adjacent)
+%
+%   Theta*: when updating neighbour nb from current node s,
+%           check if there is LINE-OF-SIGHT from parent(s) to nb
+%           YES → set parent(nb) = parent(s), cost = g(parent(s)) + euclid(parent(s), nb)
+%           NO  → fall back to A* update: parent(nb) = s, cost = g(s) + 1
+%
+% This happens DURING the search — not after. The result is that the
+% algorithm can connect nodes that are not grid-adjacent, producing
+% true any-angle paths in a single pass.
+%
+% LOS check: Liang-Barsky line-vs-rectangle test against all inflated
+% obstacle rectangles in world coordinates (same hasLineOfSight function).
 disp(' ');
-disp('--- Algorithm 4: Theta* (A* + string-pulling smoothing) ---');
-disp('   [Daniel et al. 2010 - any-angle paths, robust formulation]');
+disp('--- Algorithm 4: Theta* (true any-angle, Daniel et al. 2010) ---');
+disp('   [Single-pass: LOS checked during search, not after]');
 
-tic; A4Path=[]; A4Nodes=0; A4RawPath=[];  % A4RawPath stores raw A* path for visualisation
+tic; A4Path=[]; A4Nodes=0; A4RawPath=[];
+SafetyMargin=InflateCells*MeshSize+0.5;
 
 for wp=1:size(Waypoints,2)-1
     sC=Waypoints(:,wp); gC=Waypoints(:,wp+1);
 
-    % --- 1. Run A* to get a guaranteed-valid grid path ---------------
-    [rawSeg,nExp]=runAStar(sC,gC,InflatedMap,NumCellsX,NumCellsY);
-    A4Nodes=A4Nodes+nExp;
+    openList=sC;
+    gS=inf(NumCellsX,NumCellsY);
+    fS=inf(NumCellsX,NumCellsY);
+    parent=zeros(NumCellsX,NumCellsY,2);  % parent map
+    cl=InflatedMap;
 
-    if isempty(rawSeg)
-        disp(['   WARN: no Theta* path for segment ',num2str(wp)]);
-        continue;
-    end
+    gS(sC(1),sC(2))=0;
+    fS(sC(1),sC(2))=norm(sC-gC);
+    parent(sC(1),sC(2),:)=sC;  % start is its own parent
 
-    % Save the raw A* path before smoothing (for visualisation)
-    A4RawPath=[A4RawPath,rawSeg];
+    found=false; A4Nodes_seg=0;
 
-    % --- 2. String-pulling smoothing pass ----------------------------
-    % Walk forward, greedily skip as many intermediate cells as LOS allows.
-    % LOS uses world-coord line-vs-rectangle test (no grid sampling).
-    SafetyMargin=InflateCells*MeshSize+0.5;   % a hair extra so paths
-                                              % visually clear the red edge
-    smoothed=rawSeg(:,1);
-    i=1;
-    nCells=size(rawSeg,2);
-    while i<nCells
-        % Try farthest first, walk back until LOS clear
-        j=nCells;
-        while j>i+1
-            if hasLineOfSight(rawSeg(:,i),rawSeg(:,j),ObsRect,SafetyMargin,CellsX,CellsY)
-                break;
-            end
-            j=j-1;
+    while ~isempty(openList)
+        % Pop lowest f
+        bF=Inf; bI=1;
+        for k=1:size(openList,2)
+            f=fS(openList(1,k),openList(2,k));
+            if f<bF; bF=f; bI=k; end
         end
-        smoothed=[smoothed,rawSeg(:,j)];
-        i=j;
+        s=openList(:,bI);
+        openList=openList(:,[1:bI-1,bI+1:end]);
+        A4Nodes_seg=A4Nodes_seg+1;
+
+        if s(1)==gC(1)&&s(2)==gC(2); found=true; break; end
+        cl(s(1),s(2))=1;
+
+        % Get parent of s
+        sp=squeeze(parent(s(1),s(2),:));
+
+        dirs=[1 0;-1 0;0 1;0 -1]';
+        for d=1:4
+            nb=s+dirs(:,d);
+            if nb(1)<1||nb(1)>NumCellsX||nb(2)<1||nb(2)>NumCellsY; continue; end
+            if cl(nb(1),nb(2))==1; continue; end
+
+            % ---- PATH 2: Theta* check (LOS from grandparent to neighbour) ----
+            if hasLineOfSight(sp,nb,ObsRect,SafetyMargin,CellsX,CellsY)
+                % Connect nb directly to grandparent sp
+                dx=CellsX(nb(1))-CellsX(sp(1));
+                dy=CellsY(nb(2))-CellsY(sp(2));
+                tentG=gS(sp(1),sp(2))+sqrt(dx*dx+dy*dy);
+                if tentG<gS(nb(1),nb(2))
+                    parent(nb(1),nb(2),:)=sp;  % grandparent becomes parent
+                    gS(nb(1),nb(2))=tentG;
+                    fS(nb(1),nb(2))=tentG+norm(nb-gC);
+                    inO=false;
+                    for k=1:size(openList,2)
+                        if openList(1,k)==nb(1)&&openList(2,k)==nb(2); inO=true; break; end
+                    end
+                    if ~inO; openList=[openList,nb]; end
+                end
+            else
+                % ---- PATH 1: Standard A* update (no LOS to grandparent) ----
+                tentG=gS(s(1),s(2))+1;
+                if tentG<gS(nb(1),nb(2))
+                    parent(nb(1),nb(2),:)=s;
+                    gS(nb(1),nb(2))=tentG;
+                    fS(nb(1),nb(2))=tentG+norm(nb-gC);
+                    inO=false;
+                    for k=1:size(openList,2)
+                        if openList(1,k)==nb(1)&&openList(2,k)==nb(2); inO=true; break; end
+                    end
+                    if ~inO; openList=[openList,nb]; end
+                end
+            end
+        end
     end
 
-    A4Path=[A4Path,smoothed];
+    A4Nodes=A4Nodes+A4Nodes_seg;
+
+    if found
+        % Reconstruct path by following parent pointers
+        seg=gC; node=gC;
+        while ~(node(1)==sC(1)&&node(2)==sC(2))
+            prev=squeeze(parent(node(1),node(2),:));
+            if prev(1)==0&&prev(2)==0; break; end
+            seg=[prev,seg]; node=prev;
+        end
+        A4RawPath=[A4RawPath,seg];  % for visualisation (this IS the Theta* path)
+        A4Path=[A4Path,seg];
+    else
+        disp(['   WARN: no Theta* path for segment ',num2str(wp)]);
+    end
 end
 A4Time=toc; A4Dist=calcDist(A4Path,CellsX,CellsY); A4Cells=size(A4Path,2); A4Steps=calcSteps(A4Path);
 disp(['   Steps: ',num2str(A4Steps),' | Dist: ',num2str(round(A4Dist,1)),...
