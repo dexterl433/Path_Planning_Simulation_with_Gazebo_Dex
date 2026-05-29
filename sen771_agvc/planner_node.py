@@ -261,15 +261,15 @@ class SEN771PlannerNode(Node):
         self.get_logger().info('[4/5] Saving planned-paths plot...')
         self._save_planned_plot(grid, inflated, results, target_cells, start_cell)
 
-        # 6. Drive 4 variants: A* (smoothed), BFS (smoothed),
-        #    Theta* (smoothed), Theta* (raw).  Lets us see whether the
-        #    post-process optimization helps even an any-angle path.
+        # 6. Drive all 4 algorithms once — matching MATLAB's algorithm set.
+        #    A*/BFS/RRT paths are simplified (line-of-sight shortcutting)
+        #    before driving; Theta* is already any-angle so no simplification.
         self.get_logger().info('[5/5] Driving paths in Gazebo...')
         run_specs = [
-            ('A* (smoothed)',     'A*',     True),
-            ('BFS (smoothed)',    'BFS',    True),
-            ('Theta* (smoothed)', 'Theta*', True),
-            ('Theta* (raw)',      'Theta*', False),
+            ('A*',     'A*',     True),
+            ('BFS',    'BFS',    True),
+            ('RRT',    'RRT',    True),
+            ('Theta*', 'Theta*', False),
         ]
         actual_paths     = {}
         simplified_paths = {}
