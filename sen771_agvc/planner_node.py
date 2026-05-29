@@ -69,12 +69,20 @@ else:
     OBS = _OBS_FALLBACK
     print(f'[planner] No generated obstacles found — using fixed layout ({len(OBS)} obstacles)')
 
-TARGET_POS = [
-    (116.0, 54.5),   # T1 – blue  (moved inward from PDF spec 119.5 — robot can't fit at boundary)
-    (82.5,  15.5),   # T2 – orange
-    (82.5,  75.5),   # T3 – purple
-    (60.5,  54.5),   # T4 – yellow
+_TGT_JSON = '/tmp/sen771_targets.json'
+_TGT_FALLBACK = [
+    (116.0, 54.5),
+    (82.5,  15.5),
+    (82.5,  75.5),
+    (60.5,  54.5),
 ]
+if os.path.exists(_TGT_JSON):
+    with open(_TGT_JSON) as _f:
+        TARGET_POS = [(d['x'], d['y']) for d in json.load(_f)]
+    print(f'[planner] Loaded {len(TARGET_POS)} targets from {_TGT_JSON}')
+else:
+    TARGET_POS = _TGT_FALLBACK
+    print(f'[planner] No target file found — using fixed layout ({len(TARGET_POS)} targets)')
 
 ROBOT_START_M = (3.0, 45.0)
 CMD_TOPIC     = '/sen771_robot/cmd_vel'
