@@ -72,15 +72,19 @@ ObstacleMap=zeros(NumCellsX,NumCellsY);
 ObsRect=zeros(NumObstacles,4);
 InflateCells=2;   % 2-cell safety margin (= 2 m) — keeps Theta* shortcuts
                   % visibly clear of the red obstacle rectangles
+minSpacing = ObsSize*1.5 + 3;  % min centre-to-centre gap between obstacles
+obsCentres = zeros(2,NumObstacles);
 for obs=1:NumObstacles
-    % Match Gazebo generator: each obstacle is a rectangle, randomly
-    % oriented tall (w x 2w) or wide (2w x w) — never a square.
-    if rand()<0.5
-        w=ObsSize; h=ObsSize*2;       % tall
-    else
-        w=ObsSize*2; h=ObsSize;       % wide
+    if rand()<0.5; w=ObsSize; h=ObsSize*2; else; w=ObsSize*2; h=ObsSize; end
+    for attempt=1:300
+        ox=w/2+rand()*(FieldLength-w); oy=h/2+rand()*(FieldWidth-h);
+        tooClose=false;
+        for prev=1:obs-1
+            if norm([ox;oy]-obsCentres(:,prev))<minSpacing; tooClose=true; break; end
+        end
+        if ~tooClose; break; end
     end
-    ox=w/2+rand()*(FieldLength-w); oy=h/2+rand()*(FieldWidth-h);
+    obsCentres(:,obs)=[ox;oy];
     ObsRect(obs,:)=[ox-w/2,oy-h/2,w,h];
     xMn=ox-w/2; xMx=ox+w/2; yMn=oy-h/2; yMx=oy+h/2;
     iMn=max(1,floor(xMn/MeshSize)); iMx=min(NumCellsX,ceil(xMx/MeshSize));
@@ -115,27 +119,10 @@ while InflatedMap(RobotStart(1),RobotStart(2))==1
     if RobotStart(2)>NumCellsY; RobotStart(2)=1; end
 end
 
-%% ===================== TARGETS ======================================
-disp('[3/9] Placing targets...');
-TargetCells=zeros(2,NumTargets);
-for t=1:NumTargets
-    placed=false;
-    while ~placed
-        tx=randi([round(NumCellsX*0.3),NumCellsX-2]);
-        ty=randi([3,NumCellsY-2]);
-        if InflatedMap(tx,ty)==0
-            tooClose=false;
-            for p=1:t-1; if norm([tx;ty]-TargetCells(:,p))<10; tooClose=true; break; end; end
-            if ~tooClose; TargetCells(:,t)=[tx;ty]; placed=true; end
-        end
-    end
-    disp(['   T',num2str(t),': (',num2str(CellsX(tx)),'m, ',num2str(CellsY(ty)),'m)']);
-end
-
-%% ===================== SCENARIO PLOT ================================
-disp('[4/9] Drawing scenario...');
-figure('Name','SEN771 - Scenario','Position',[50 50 800 600]);
-hold on; title('Soccer Field - Scenario Overview');
+%% ===================== SCENARIO PLOT (obstacles only) ===============
+disp('[3/9] Drawing field — pick your targets from the plot...');
+hScenario=figure('Name','SEN771 - Scenario','Position',[50 50 800 600]);
+hold on; title('Soccer Field — place your 4 targets (see command window)');
 xlabel('x (m)'); ylabel('y (m)');
 rectangle('Position',[0 0 FieldLength FieldWidth],'EdgeColor','b','LineWidth',2);
 axis([-5 FieldLength+5 -5 FieldWidth+5]); axis equal;
@@ -145,13 +132,43 @@ for obs=1:NumObstacles; rectangle('Position',ObsRect(obs,:),'FaceColor',[1 0 0 0
 for i=1:NumCellsX; for j=1:NumCellsY
     if ObstacleMap(i,j)==1; plot(CellsX(i),CellsY(j),'r.','MarkerSize',3); end
 end; end
-for t=1:NumTargets
-    plot(CellsX(TargetCells(1,t)),CellsY(TargetCells(2,t)),'go','MarkerSize',12,'LineWidth',2,'MarkerFaceColor','g');
-    text(CellsX(TargetCells(1,t))+2,CellsY(TargetCells(2,t))+2,['T',num2str(t)],'FontSize',10,'FontWeight','bold','Color',[0 0.5 0]);
-end
 plot(CellsX(RobotStart(1)),CellsY(RobotStart(2)),'ms','MarkerSize',12,'LineWidth',2,'MarkerFaceColor','m');
 text(CellsX(RobotStart(1))+2,CellsY(RobotStart(2))+2,'Start','FontSize',10,'FontWeight','bold','Color','m');
-hold off; drawnow;
+drawnow;
+
+%% ===================== TARGETS (user picks) ==========================
+disp('[4/9] Choose 4 target locations...');
+disp('  Look at the field plot. x: 0-120 m, y: 0-90 m. Avoid red obstacles.');
+disp('  TSP will find the fastest order to visit all 4 and return to Start.');
+TargetCells=zeros(2,NumTargets);
+for t=1:NumTargets
+    placed=false;
+    while ~placed
+        coords=input(['  Target ',num2str(t),' [x y] in metres: ']);
+        if numel(coords)<2; disp('  Enter two values e.g. [60 45]'); continue; end
+        tx=round(coords(1)/MeshSize); ty=round(coords(2)/MeshSize);
+        tx=max(1,min(NumCellsX,tx)); ty=max(1,min(NumCellsY,ty));
+        if InflatedMap(tx,ty)==1
+            disp('  That point is on or too close to an obstacle. Try again.');
+        else
+            tooClose=false;
+            for p=1:t-1
+                if norm([tx;ty]-TargetCells(:,p))<5; tooClose=true; break; end
+            end
+            if tooClose; disp('  Too close to a previous target. Try again.');
+            else
+                TargetCells(:,t)=[tx;ty]; placed=true;
+                % Draw target on existing figure immediately
+                figure(hScenario);
+                plot(CellsX(tx),CellsY(ty),'go','MarkerSize',12,'LineWidth',2,'MarkerFaceColor','g');
+                text(CellsX(tx)+2,CellsY(ty)+2,['T',num2str(t)],'FontSize',10,'FontWeight','bold','Color',[0 0.5 0]);
+                drawnow;
+                disp(['  T',num2str(t),': (',num2str(CellsX(tx)),'m, ',num2str(CellsY(ty)),'m) — confirmed']);
+            end
+        end
+    end
+end
+title('Soccer Field - Scenario Overview'); hold off;
 
 %% ===================== TSP OPTIMISATION ==============================
 disp('[5/9] Optimising target order (TSP)...');
@@ -386,7 +403,7 @@ disp(' ');
 disp('--- Algorithm 4: Theta* (A* + string-pulling smoothing) ---');
 disp('   [Daniel et al. 2010 - any-angle paths, robust formulation]');
 
-tic; A4Path=[]; A4Nodes=0;
+tic; A4Path=[]; A4Nodes=0; A4RawPath=[];  % A4RawPath stores raw A* path for visualisation
 
 for wp=1:size(Waypoints,2)-1
     sC=Waypoints(:,wp); gC=Waypoints(:,wp+1);
@@ -399,6 +416,9 @@ for wp=1:size(Waypoints,2)-1
         disp(['   WARN: no Theta* path for segment ',num2str(wp)]);
         continue;
     end
+
+    % Save the raw A* path before smoothing (for visualisation)
+    A4RawPath=[A4RawPath,rawSeg];
 
     % --- 2. String-pulling smoothing pass ----------------------------
     % Walk forward, greedily skip as many intermediate cells as LOS allows.
@@ -466,6 +486,7 @@ end
 step=1;
 while step<=maxSteps
     for alg=1:numAlgs
+        if alg==4; continue; end  % skip Theta* animation (drawn statically)
         pth=algPaths{alg}; if isempty(pth); continue; end
         s=min(step,size(pth,2));
         px=CellsX(pth(1,s)); py=CellsY(pth(2,s));
