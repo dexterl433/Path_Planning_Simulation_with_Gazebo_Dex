@@ -1,7 +1,7 @@
 # SEN771 AGVC — Path Planning Simulation with ROS 2 + Gazebo
 
 **Student:** Dexter Leong | s223026243  
-**Unit:** SEN771 Intelligent Autonomous Robots — T1 2026
+**Unit:** SEN771 Intelligent Autonomous Robots, T1 2026
 
 ---
 
@@ -12,12 +12,12 @@ Before each run the user clicks four target locations on an interactive map.
 The robot then visits all four targets in the optimal order and returns to start.
 
 Key features:
-- **User-selectable targets** — click 4 points on a matplotlib field preview; Gazebo spawns coloured disc markers exactly where you clicked
-- **TSP optimisation** — brute-force 4! = 24 permutations finds the shortest round-trip visit order before any path is planned
-- **Four path planning algorithms** — A\*, BFS, RRT, and Theta\* each plan the full route independently; the robot drives all four back-to-back for comparison
-- **Pure Pursuit controller** — 50 Hz control loop with adaptive look-ahead; slows to 0.2 m/s within 1 m of each target
-- **Stop / wait / turn at every target** — robot fully stops inside each disc, pauses, then rotates to face the next outgoing direction before continuing
-- **Whole-car detection** — trigger fires only when the entire 3.0 × 1.7 m chassis is inside the 2.0 m-radius disc (centre-to-centre ≤ 0.3 m)
+- **User-selectable targets**: click 4 points on a matplotlib field preview; Gazebo spawns coloured disc markers exactly where you clicked
+- **TSP optimisation**: brute-force 4! = 24 permutations finds the shortest round-trip visit order before any path is planned
+- **Four path planning algorithms**: A\*, BFS, RRT, and Theta\* each plan the full route independently; the robot drives all four back-to-back for comparison
+- **Pure Pursuit controller**: 50 Hz control loop with adaptive look-ahead; slows to 0.2 m/s within 1 m of each target
+- **Stop / wait / turn at every target**: robot fully stops inside each disc, pauses, then rotates to face the next outgoing direction before continuing
+- **Whole-car detection**: trigger fires only when the entire 3.0 × 1.7 m chassis is inside the 2.0 m-radius disc (centre-to-centre ≤ 0.3 m)
 
 ---
 
@@ -28,7 +28,7 @@ Key features:
 | OS | Ubuntu 24.04 |
 | ROS 2 | Jazzy |
 | Gazebo | Ionic (Harmonic) |
-| Python | 3.12 (system — **not** conda) |
+| Python | 3.12 (system, **not** conda) |
 
 ---
 
@@ -71,7 +71,7 @@ Close the window. Gazebo loads with your chosen targets as coloured discs, and t
 | Argument | Default | Description |
 |---|---|---|
 | `obs_size:=6` | 6 | Obstacle base size in metres (obstacles are randomly tall or wide multiples of this) |
-| `autostart:=false` | true | Start Gazebo paused — press Play to begin |
+| `autostart:=false` | true | Start Gazebo paused; press Play to begin |
 | `rviz:=true` | false | Open RViz2 alongside Gazebo |
 | `run_planner:=false` | true | Launch Gazebo without starting the planner node |
 
@@ -91,9 +91,9 @@ All four algorithms solve the same TSP-ordered multi-target route. Each segment 
 | **A\*** | Informed search | Heuristic = Euclidean distance; 4-connected grid; optimal on grid |
 | **BFS** | Uninformed search | Explores all directions equally; guarantees shortest grid path but slower than A\* |
 | **RRT** | Sampling-based | 15% goal bias; step size 4 cells; probabilistically complete |
-| **Theta\*** | Any-angle A\* | Parent-linking shortcut: if grandparent has line-of-sight to neighbour, skip the current node and connect directly with Euclidean cost — produces smooth diagonal paths without post-processing |
+| **Theta\*** | Any-angle A\* | Parent-linking shortcut: if grandparent has line-of-sight to neighbour, skip the current node and connect directly with Euclidean cost, producing smooth diagonal paths without post-processing |
 
-After planning, the robot drives each algorithm's path in sequence. A\*, BFS, and RRT paths are simplified first (greedy line-of-sight waypoint reduction). Theta\* runs raw — it is already any-angle.
+After planning, the robot drives each algorithm's path in sequence. A\*, BFS, and RRT paths are simplified first (greedy line-of-sight waypoint reduction). Theta\* runs raw; it is already any-angle.
 
 ---
 
@@ -132,7 +132,7 @@ When the robot reaches a target disc:
 4. Spin in place until heading is within 5° of the outgoing path direction
 5. Resume Pure Pursuit toward the next target
 
-Approach speed ramps from cruise (10 m/s) down to 0.2 m/s at 0.8 m from the disc centre — formula: `max(0.2, distance × 0.25)` m/s.
+Approach speed ramps from cruise (10 m/s) down to 0.2 m/s at 0.8 m from the disc centre, using the formula `max(0.2, distance × 0.25)` m/s.
 
 ---
 
@@ -152,7 +152,7 @@ After each run the planner saves plots to `~/ros2_ws/`:
 
 ## MATLAB Prototype
 
-`matlab/SEN771_Project.m` implements the same four algorithms (A\*, BFS, RRT, Theta\*) and TSP solver in pure MATLAB — no ROS 2 or Gazebo required.
+`matlab/SEN771_Project.m` implements the same four algorithms (A\*, BFS, RRT, Theta\*) and TSP solver in pure MATLAB, with no ROS 2 or Gazebo required.
 Open in MATLAB R2021a or later and run the script directly.
 
 The MATLAB version uses fixed hardcoded obstacles and targets for reproducibility. The ROS 2 version uses randomly generated obstacles and user-clicked targets for each run.
@@ -163,7 +163,7 @@ The MATLAB version uses fixed hardcoded obstacles and targets for reproducibilit
 
 ### 1 — Miniconda / Anaconda Python version mismatch
 
-**Problem:** ROS 2 Jazzy requires Python 3.12 (system). If Miniconda or Anaconda is installed, `python3` and `colcon` may resolve to Python 3.13 (conda). Running `colcon build` with the wrong Python produces `.pyc` bytecode for 3.13, but the planner entry point (`#!/usr/bin/python3`) uses system Python 3.12 — the compiled package is silently ignored and the node falls back to whatever is in `site-packages`.
+**Problem:** ROS 2 Jazzy requires Python 3.12 (system). If Miniconda or Anaconda is installed, `python3` and `colcon` may resolve to Python 3.13 (conda). Running `colcon build` with the wrong Python produces `.pyc` bytecode for 3.13, but the planner entry point (`#!/usr/bin/python3`) uses system Python 3.12. The compiled package is silently ignored and the node falls back to whatever is in `site-packages`.
 
 **Fix:** Prepend the system binary paths before building:
 ```bash
@@ -172,7 +172,7 @@ PATH=/usr/bin:/usr/local/bin:/bin colcon build --packages-select sen771_agvc --s
 
 ### 2 — Stale `site-packages` copy not updated by `--symlink-install`
 
-**Problem:** `colcon build --symlink-install` symlinks the package in the *build* directory to the source, but copies the Python files into the *install* `site-packages/` directory. Edits to source after the initial build are not reflected — the node keeps running the old copy.
+**Problem:** `colcon build --symlink-install` symlinks the package in the *build* directory to the source, but copies the Python files into the *install* `site-packages/` directory. Edits to source after the initial build are not reflected; the node keeps running the old copy.
 
 **Fix:** Replace the physical copies with symlinks after building:
 ```bash
@@ -235,7 +235,7 @@ pkill -f gz_sim; pkill -f planner; pkill -f parameter_bridge
 
 | Resource | Source |
 |---|---|
-| Husky A200 robot meshes | [Clearpath Robotics — clearpath_common](https://github.com/clearpathrobotics/clearpath_common) |
+| Husky A200 robot meshes | [Clearpath Robotics, clearpath_common](https://github.com/clearpathrobotics/clearpath_common) |
 | ROS 2 ↔ Gazebo bridge | [gazebosim/ros_gz](https://github.com/gazebosim/ros_gz) |
 | ROS 2 Jazzy | [ros2/ros2](https://github.com/ros2/ros2) |
 | Gazebo Ionic | [gazebosim/gz-sim](https://github.com/gazebosim/gz-sim) |
@@ -288,7 +288,7 @@ source install/setup.bash
 ros2 launch sen771_agvc sen771.launch.py
 ```
 
-WSLg handles the display automatically on Windows 11 — no X server setup needed.
+WSLg handles the display automatically on Windows 11. No X server setup is needed.
 
 ### Optional: Increase WSL2 resources
 
