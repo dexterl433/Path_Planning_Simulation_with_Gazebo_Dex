@@ -38,8 +38,12 @@ def generate_launch_description():
 
         # ── 1. Run world generator ───────────────────────────────────────────
         print(f'\n[sen771] Generating random world (obs_size={obs_size} m)...')
+        gen_env = os.environ.copy()
+        gen_env.setdefault('DISPLAY', ':0')       # WSLg: ensure X11 display is set
+        gen_env['MPLBACKEND'] = 'TkAgg'           # force interactive Tk window
         result = subprocess.run(
             [sys.executable, generator_script, obs_size],
+            env=gen_env,
             check=False,
         )
         if result.returncode != 0:
