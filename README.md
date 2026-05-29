@@ -138,6 +138,19 @@ Approach speed ramps from cruise (10 m/s) down to 0.2 m/s at 0.8 m from the disc
 
 ---
 
+## Results
+
+![Paths comparison](images/paths_comparison.png)
+
+All four algorithms plan the same TSP-ordered route. The chart above shows the key differences:
+
+- **Theta\*** produces the shortest overall path by cutting diagonals directly through free space. Because it links any two nodes that have clear line-of-sight, it is not constrained to grid directions and consistently travels fewer metres than the other algorithms.
+- **A\*** is the next most efficient. It is optimal on the grid but still limited to horizontal and vertical moves, so its path is longer than Theta\* on open terrain.
+- **BFS** explores equally in all directions and also finds the shortest grid path, but does so by expanding far more nodes than A\*, making it the slowest planner.
+- **RRT** finds a valid path quickly through random sampling but the result is jagged and non-optimal; it is best suited to high-dimensional spaces where grid search is impractical.
+
+---
+
 ## Output Files
 
 After each run the planner saves plots to `~/ros2_ws/`:
