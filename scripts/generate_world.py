@@ -160,6 +160,18 @@ def pick_targets_click(obstacles):
     ax.set_title('Click to place Target 1 of 4 — avoid red obstacles',
                  color=[0, 0.5, 0])
     plt.tight_layout()
+
+    # Force window to front on WSL2/WSLg — without this the Tk window opens
+    # behind the terminal and WSLg doesn't pass clicks through until it has focus.
+    try:
+        win = fig.canvas.manager.window
+        win.lift()
+        win.attributes('-topmost', True)
+        win.focus_force()
+        win.attributes('-topmost', False)  # allow other windows on top after focus
+    except Exception:
+        pass
+
     plt.show()  # blocks until window is closed
 
     return targets
