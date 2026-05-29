@@ -136,30 +136,32 @@ plot(CellsX(RobotStart(1)),CellsY(RobotStart(2)),'ms','MarkerSize',12,'LineWidth
 text(CellsX(RobotStart(1))+2,CellsY(RobotStart(2))+2,'Start','FontSize',10,'FontWeight','bold','Color','m');
 drawnow;
 
-%% ===================== TARGETS (user picks) ==========================
-disp('[4/9] Choose 4 target locations...');
-disp('  Look at the field plot. x: 0-120 m, y: 0-90 m. Avoid red obstacles.');
+%% ===================== TARGETS (click to place) ======================
+disp('[4/9] Click on the field to place 4 targets. Avoid red obstacles.');
 disp('  TSP will find the fastest order to visit all 4 and return to Start.');
 TargetCells=zeros(2,NumTargets);
 for t=1:NumTargets
     placed=false;
     while ~placed
-        coords=input(['  Target ',num2str(t),' [x y] in metres: ']);
-        if numel(coords)<2; disp('  Enter two values e.g. [60 45]'); continue; end
-        tx=round(coords(1)/MeshSize); ty=round(coords(2)/MeshSize);
+        figure(hScenario);
+        title(['Click to place Target ',num2str(t),' of ',num2str(NumTargets),...
+            ' — avoid red obstacles'],'Color',[0 0.5 0]);
+        [cx,cy]=ginput(1);
+        tx=round(cx/MeshSize); ty=round(cy/MeshSize);
         tx=max(1,min(NumCellsX,tx)); ty=max(1,min(NumCellsY,ty));
         if InflatedMap(tx,ty)==1
-            disp('  That point is on or too close to an obstacle. Try again.');
+            title(['Target ',num2str(t),': too close to obstacle — click again'],'Color','r');
+            drawnow;
         else
             tooClose=false;
             for p=1:t-1
                 if norm([tx;ty]-TargetCells(:,p))<5; tooClose=true; break; end
             end
-            if tooClose; disp('  Too close to a previous target. Try again.');
+            if tooClose
+                title(['Target ',num2str(t),': too close to another target — click again'],'Color','r');
+                drawnow;
             else
                 TargetCells(:,t)=[tx;ty]; placed=true;
-                % Draw target on existing figure immediately
-                figure(hScenario);
                 plot(CellsX(tx),CellsY(ty),'go','MarkerSize',12,'LineWidth',2,'MarkerFaceColor','g');
                 text(CellsX(tx)+2,CellsY(ty)+2,['T',num2str(t)],'FontSize',10,'FontWeight','bold','Color',[0 0.5 0]);
                 drawnow;
